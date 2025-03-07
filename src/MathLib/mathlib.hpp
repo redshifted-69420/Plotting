@@ -96,7 +96,7 @@ namespace Math {
   std::vector<float> Log(const std::vector<float> &vec);
   std::vector<float> Log10(const std::vector<float> &vec);
   std::vector<float> Log2(const std::vector<float> &vec);
-  std::vector<float> Log(const std::vector<float> &vec, const float base);
+  std::vector<float> Log(const std::vector<float> &vec, float base);
   std::vector<float> ArcSin(const std::vector<float> &vec);
   std::vector<float> ArcCos(const std::vector<float> &vec);
   std::vector<float> ArcTan(const std::vector<float> &vec);

@@ -57,7 +57,7 @@ namespace Plot {
 
   struct Viewport {
     float xMin, xMax, yMin, yMax;
-    bool contains(float x, float y) const { return x >= xMin && x <= xMax && y >= yMin && y <= yMax; }
+    [[nodiscard]] bool contains(const float x, const float y) const { return x >= xMin && x <= xMax && y >= yMin && y <= yMax; }
   };
 
   class Canvas {
@@ -131,8 +131,8 @@ public:
     void setXRange(float min, float max);
     void setYRange(float min, float max);
     void setGridProperties(const GridProperties &props);
-    int worldToPixelX(float x) const;
-    int worldToPixelY(float y) const;
+    [[nodiscard]] int worldToPixelX(float x) const;
+    [[nodiscard]] int worldToPixelY(float y) const;
     void addLatexAnnotation(const std::string &latex, float x, float y, float scale = 1.0f,
                             const Pixel &color = Pixel(0, 0, 0, 255)) {
       LatexAnnotation annotation;
@@ -143,8 +143,8 @@ public:
       annotation.color = color;
       latexAnnotations.push_back(annotation);
     }
-    std::u32string formatNumber(float value, const std::u32string &format = U"%.1f") const;
-    void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size) const;
+    static std::u32string formatNumber(float value, const std::u32string &format = U"%.1f") ;
+    static void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size) ;
     void addPlot(const std::vector<float> &x, const std::vector<float> &y, const PlotStyle &style = PlotStyle());
 
     [[nodiscard]] Canvas render() const;
@@ -164,13 +164,13 @@ private:
     void drawPlot(Canvas &canvas, const std::vector<float> &x, const std::vector<float> &y,
                   const PlotStyle &style) const;
     void validateData(const std::vector<float> &x, const std::vector<float> &y) const;
-    bool isValidNumber(float n) const;
-    void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size) const;
+    static bool isValidNumber(float n) ;
+    static void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size) ;
     struct LatexAnnotation {
       std::string latex;
-      float x;
-      float y;
-      float scale;
+      float x{};
+      float y{};
+      float scale{};
       Pixel color;
     };
 
@@ -184,12 +184,12 @@ private:
     std::vector<PlotStyle> plotStyles_;
     AxisProperties xAxisProps_;
     AxisProperties yAxisProps_;
-    Viewport viewport_;
+    Viewport viewport_{};
     Padding padding_;
-    int getPlotWidth() const { return width_ - padding_.left - padding_.right; }
-    int getPlotHeight() const { return height_ - padding_.top - padding_.bottom; }
-    int getPlotX() const { return padding_.left; }
-    int getPlotY() const { return padding_.top; }
+    [[nodiscard]] int getPlotWidth() const { return width_ - padding_.left - padding_.right; }
+    [[nodiscard]] int getPlotHeight() const { return height_ - padding_.top - padding_.bottom; }
+    [[nodiscard]] int getPlotX() const { return padding_.left; }
+    [[nodiscard]] int getPlotY() const { return padding_.top; }
   };
 
   class PngGenerator {

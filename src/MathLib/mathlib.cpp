@@ -152,49 +152,49 @@ namespace Math {
   std::vector<float> Sinh(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::sinh(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::sinh(x); });
     return result;
   }
 
   std::vector<float> Cosh(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::cosh(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::cosh(x); });
     return result;
   }
 
   std::vector<float> Tanh(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::tanh(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::tanh(x); });
     return result;
   }
 
   std::vector<float> Exp(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::exp(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::exp(x); });
     return result;
   }
 
   std::vector<float> Pow(const std::vector<float> &vec, float exponent) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [&](float x) { return std::pow(x, exponent); });
+    std::ranges::transform(vec, std::back_inserter(result), [&](float x) { return std::pow(x, exponent); });
     return result;
   }
 
   std::vector<float> Abs(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::abs(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::abs(x); });
     return result;
   }
 
   std::vector<float> Sqrt(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) {
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) {
       if (x < 0) {
         throw std::domain_error("Cannot take square root of negative number.");
       }
@@ -206,21 +206,21 @@ namespace Math {
   std::vector<float> Round(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::round(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::round(x); });
     return result;
   }
 
   std::vector<float> Floor(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::floor(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::floor(x); });
     return result;
   }
 
   std::vector<float> Ceil(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result), [](float x) { return std::ceil(x); });
+    std::ranges::transform(vec, std::back_inserter(result), [](float x) { return std::ceil(x); });
     return result;
   }
 
@@ -232,28 +232,28 @@ namespace Math {
     result.reserve(vec1.size());
 
     std::transform(vec1.begin(), vec1.end(), vec2.begin(), std::back_inserter(result),
-                   [](float a, float b) { return std::fmod(a, b); });
+                   [](const float a, const float b) { return std::fmod(a, b); });
 
     return result;
   }
 
-  std::vector<float> RandomUniform(int size, float min, float max) {
+  std::vector<float> RandomUniform(const int size, const float min, const float max) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(min, max);
 
     std::vector<float> result(size);
-    std::generate(result.begin(), result.end(), [&]() { return dis(gen); });
+    std::ranges::generate(result, [&]() { return dis(gen); });
     return result;
   }
 
-  std::vector<float> RandomNormal(int size, float mean, float stddev) {
+  std::vector<float> RandomNormal(const int size, const float mean, const float stddev) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::normal_distribution<> dis(mean, stddev);
 
     std::vector<float> result(size);
-    std::generate(result.begin(), result.end(), [&]() { return dis(gen); });
+    std::ranges::generate(result, [&]() { return dis(gen); });
     return result;
   }
 
@@ -263,7 +263,7 @@ namespace Math {
     if (vec.empty()) {
       throw std::invalid_argument("Cannot calculate mean of an empty vector.");
     }
-    return Sum(vec) / vec.size();
+    return Sum(vec) / static_cast<float>(vec.size());
   }
 
   float Variance(const std::vector<float> &vec) {
@@ -271,18 +271,17 @@ namespace Math {
       throw std::invalid_argument("Variance requires at least two elements.");
     }
     float mean = Mean(vec);
-    float sq_sum = std::accumulate(vec.begin(), vec.end(), 0.0f,
-                                   [mean](float acc, float x) { return acc + std::pow(x - mean, 2); });
-    return sq_sum / (vec.size() - 1);
+    const float sq_sum = std::accumulate(vec.begin(), vec.end(), 0.0f,
+                                   [mean](const float acc, const float x) { return acc + std::pow(x - mean, 2); });
+    return sq_sum / static_cast<float>(vec.size() - 1);
   }
 
 
   float StdDev(const std::vector<float> &vec) { return std::sqrt(Variance(vec)); }
 
   float Median(std::vector<float> vec) {
-    std::sort(vec.begin(), vec.end());
-    int n = vec.size();
-    if (n % 2 == 0) {
+    std::ranges::sort(vec);
+    if (const int n = static_cast<int>(vec.size()); n % 2 == 0) {
       return (vec[n / 2 - 1] + vec[n / 2]) / 2.0f;
     } else {
       return vec[n / 2];
@@ -297,12 +296,11 @@ namespace Math {
   }
 
 
-  // --- Trigonometric functions with degree input---
   std::vector<float> SinDeg(const std::vector<float> &vec) {
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result),
-                   [](float x) { return std::sin(x * M_PI / 180.0f); });
+    std::ranges::transform(vec, std::back_inserter(result),
+                   [](const float x) { return std::sin(x * M_PI / 180.0f); });
     return result;
   }
   template<typename T>
@@ -325,16 +323,16 @@ namespace Math {
     if (vec.empty()) {
       throw std::invalid_argument("Cannot normalize an empty vector.");
     }
-    float minVal = Min(vec);
-    float maxVal = Max(vec);
+    const float minVal = Min(vec);
+    const float maxVal = Max(vec);
     if (std::abs(maxVal - minVal) < std::numeric_limits<float>::epsilon()) {
       throw std::runtime_error("Cannot normalize a vector with identical elements."); // Or return a vector of zeros
     }
 
     std::vector<float> result;
     result.reserve(vec.size());
-    std::transform(vec.begin(), vec.end(), std::back_inserter(result),
-                   [&](float x) { return (x - minVal) / (maxVal - minVal); });
+    std::ranges::transform(vec, std::back_inserter(result),
+                   [&](const float x) { return (x - minVal) / (maxVal - minVal); });
     return result;
   }
 

@@ -1,5 +1,4 @@
 #include "Matrix.hpp"
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
@@ -9,7 +8,6 @@
 #include <vector>
 
 #ifdef __ARM_NEON
-#include <arm_neon.h>
 #endif
 
 #ifdef _OPENMP
@@ -17,7 +15,7 @@
 #endif
 
 namespace Math {
-  Matrix::Matrix(std::initializer_list<std::initializer_list<double>> init) {
+  Matrix::Matrix(const std::initializer_list<std::initializer_list<double>> init) {
     rows_ = init.size();
     if (rows_ > 0) {
       cols_ = init.begin()->size();
@@ -27,7 +25,7 @@ namespace Math {
     for (const auto &row: init) {
       data_.emplace_back(cols_);
       auto &vec = data_.back();
-      std::copy(row.begin(), row.end(), vec.begin());
+      std::ranges::copy(row, vec.begin());
     }
   }
 
@@ -40,7 +38,7 @@ namespace Math {
     }
 
     // Allocate data
-    data_ = std::vector<std::vector<float>>(rows, std::vector<float>(cols, 0.0f));
+    data_ = std::vector(rows, std::vector(cols, 0.0f));
 
     if (type == Identity) {
       for (size_t i = 0; i < rows; ++i) {
@@ -64,7 +62,7 @@ namespace Math {
     for (size_t i = 0; i < rows_; ++i) {
       std::cout << " [";
       for (size_t j = 0; j < cols_; ++j) {
-        std::cout << "\033[32m" << std::fixed << std::setprecision(2) << std::setw(maxWidth) << data_[i][j]
+        std::cout << "\033[32m" << std::fixed << std::setprecision(2) << std::setw(static_cast<int>(maxWidth)) << data_[i][j]
                   << "\033[0m";
 
         if (j < cols_ - 1) {
@@ -98,14 +96,14 @@ namespace Math {
     if (rows_ < 64 || cols_ < 64 || other.getCols() < 64) {
       return multiplyStandard(other);
     }
-    size_t maxDim = std::max(rows_, std::max(cols_, other.getCols()));
+    const size_t maxDim = std::max(rows_, std::max(cols_, other.getCols()));
     size_t nextPowerOf2 = 1;
     while (nextPowerOf2 < maxDim) {
       nextPowerOf2 *= 2;
     }
-    Matrix A = padMatrix(nextPowerOf2);
-    Matrix B = other.padMatrix(nextPowerOf2);
-    Matrix result = coppersmithWinograd(A, B);
+    const Matrix A = padMatrix(nextPowerOf2);
+    const Matrix B = other.padMatrix(nextPowerOf2);
+    const Matrix result = coppersmithWinograd(A, B);
     return result.subMatrix(0, 0, rows_, other.getCols());
   }
 
@@ -129,7 +127,7 @@ namespace Math {
     return result;
   }
 
-  Matrix Matrix::padMatrix(size_t newSize) const {
+  Matrix Matrix::padMatrix(const size_t newSize) const {
     Matrix padded(newSize, newSize, Zeros);
 
     for (size_t i = 0; i < rows_; ++i) {
@@ -141,7 +139,7 @@ namespace Math {
     return padded;
   }
 
-  Matrix Matrix::subMatrix(size_t startRow, size_t startCol, size_t numRows, size_t numCols) const {
+  Matrix Matrix::subMatrix(const size_t startRow, const size_t startCol, const size_t numRows, const  size_t numCols) const {
     Matrix sub(numRows, numCols, Zeros);
 
     for (size_t i = 0; i < numRows && i + startRow < rows_; ++i) {
@@ -333,7 +331,7 @@ namespace Math {
       throw std::invalid_argument("Matrix must be square to compute cofactor matrix");
     }
 
-    std::vector<std::vector<float>> cofactorData(rows_, std::vector<float>(cols_));
+    std::vector cofactorData(rows_, std::vector<float>(cols_));
 
     for (size_t i = 0; i < rows_; ++i) {
       for (size_t j = 0; j < cols_; ++j) {
@@ -345,7 +343,7 @@ namespace Math {
 
   Matrix Matrix::getAdjugateMatrix() const {
     const Matrix cofactorMatrix = getCofactorMatrix();
-    std::vector<std::vector<float>> adjugateData(cols_, std::vector<float>(rows_));
+    std::vector adjugateData(cols_, std::vector<float>(rows_));
 
     // Transpose of cofactor matrix
     for (size_t i = 0; i < rows_; ++i) {
@@ -367,7 +365,7 @@ namespace Math {
     }
 
     const Matrix adjugate = getAdjugateMatrix();
-    std::vector<std::vector<float>> inverseData(rows_, std::vector<float>(cols_));
+    std::vector inverseData(rows_, std::vector<float>(cols_));
 
     // Multiply adjugate by 1/determinant
     for (size_t i = 0; i < rows_; ++i) {
@@ -437,7 +435,7 @@ namespace Math {
   }
 
   std::vector<float> Matrix::getDiagonal() const {
-    size_t minDim = std::min(rows_, cols_);
+    const size_t minDim = std::min(rows_, cols_);
     std::vector<float> diagonal(minDim);
     for (size_t i = 0; i < minDim; ++i) {
       diagonal[i] = data_[i][i];
@@ -450,7 +448,7 @@ namespace Math {
       throw std::invalid_argument("QR decomposition requires a square matrix");
     }
 
-    size_t n = rows_;
+    const size_t n = rows_;
     Matrix Q = *this;
     Matrix R(n, n, Zeros);
 
@@ -583,12 +581,12 @@ namespace Math {
   }
 
   std::vector<std::vector<float>> Matrix::findNullVectors() const {
-    size_t rows = getRows();
-    size_t cols = getCols();
+    const size_t rows = getRows();
+    const size_t cols = getCols();
     if (rows == 0 || cols == 0) {
       return {};
     }
-    std::vector<std::vector<float>> M(rows, std::vector<float>(cols));
+    std::vector M(rows, std::vector<float>(cols));
     for (size_t i = 0; i < rows; ++i) {
       for (size_t j = 0; j < cols; ++j) {
         M[i][j] = at(i, j);
@@ -598,22 +596,22 @@ namespace Math {
     for (size_t j = 0; j < cols; ++j) {
       pivots[j] = j;
     }
-    std::vector<float> colNorm(cols, 0.0f);
+    std::vector colNorm(cols, 0.0f);
     for (size_t j = 0; j < cols; ++j) {
       double sumSq = 0.0;
       for (size_t i = 0; i < rows; ++i) {
-        sumSq += double(M[i][j]) * double(M[i][j]);
+        sumSq += static_cast<double>(M[i][j]) * static_cast<double>(M[i][j]);
       }
       colNorm[j] = static_cast<float>(std::sqrt(sumSq));
     }
-    auto columnSegmentNorm = [&](size_t k, size_t col) {
+    auto columnSegmentNorm = [&](const size_t k, const size_t col) {
       double s = 0.0;
       for (size_t i = k; i < rows; ++i) {
-        s += double(M[i][col]) * double(M[i][col]);
+        s += static_cast<double>(M[i][col]) * static_cast<double>(M[i][col]);
       }
       return static_cast<float>(std::sqrt(s));
     };
-    size_t minRC = std::min(rows, cols);
+    const size_t minRC = std::min(rows, cols);
     for (size_t k = 0; k < minRC; ++k) {
       size_t pivotCol = k;
       float maxNorm = colNorm[k];
@@ -630,47 +628,46 @@ namespace Math {
           std::swap(M[i][pivotCol], M[i][k]);
         }
       }
-      float normX = columnSegmentNorm(k, k);
+      const float normX = columnSegmentNorm(k, k);
       if (normX < TOLERANCE) {
         continue;
       }
-      float alpha = (M[k][k] > 0.f) ? -normX : normX;
-      float v0 = M[k][k] - alpha;
+      const float alpha = (M[k][k] > 0.f) ? -normX : normX;
+      const float v0 = M[k][k] - alpha;
       M[k][k] = alpha;
       for (size_t j = k + 1; j < cols; ++j) {
-        double dot = double(v0) * double(M[k][j]);
+        double dot = static_cast<double>(v0) * static_cast<double>(M[k][j]);
         for (size_t i = k + 1; i < rows; ++i) {
-          dot += double(M[i][k]) * double(M[i][j]);
+          dot += static_cast<double>(M[i][k]) * static_cast<double>(M[i][j]);
         }
-        double denom = double(v0) * double(v0);
+        double denom = static_cast<double>(v0) * static_cast<double>(v0);
         for (size_t i = k + 1; i < rows; ++i) {
-          denom += double(M[i][k]) * double(M[i][k]);
+          denom += static_cast<double>(M[i][k]) * static_cast<double>(M[i][k]);
         }
         if (std::fabs(denom) < 1e-32) {
           continue; // avoid dividing by zero
         }
-        double scale = dot / denom;
-        M[k][j] -= static_cast<float>(scale * double(v0));
+        const double scale = dot / denom;
+        M[k][j] -= static_cast<float>(scale * static_cast<double>(v0));
         for (size_t i = k + 1; i < rows; ++i) {
-          M[i][j] -= static_cast<float>(scale * double(M[i][k]));
+          M[i][j] -= static_cast<float>(scale * static_cast<double>(M[i][k]));
         }
       }
       for (size_t j = k + 1; j < cols; ++j) {
         double s = 0.0;
         for (size_t i = k; i < rows; ++i) {
-          s += double(M[i][j]) * double(M[i][j]);
+          s += static_cast<double>(M[i][j]) * static_cast<double>(M[i][j]);
         }
         colNorm[j] = static_cast<float>(std::sqrt(s));
       }
     }
     float maxDiag = 0.0f;
     for (size_t i = 0; i < minRC; ++i) {
-      float val = std::fabs(M[i][i]);
-      if (val > maxDiag) {
+      if (const float val = std::fabs(M[i][i]); val > maxDiag) {
         maxDiag = val;
       }
     }
-    float rankThreshold = maxDiag * float(std::max(rows, cols)) * TOLERANCE;
+    const float rankThreshold = maxDiag * static_cast<float>(std::max(rows, cols)) * TOLERANCE;
     size_t rank = 0;
     for (size_t i = 0; i < minRC; ++i) {
       if (std::fabs(M[i][i]) > rankThreshold) {
@@ -686,21 +683,20 @@ namespace Math {
     nullSpace.reserve(cols - rank);
 
     for (size_t freeIdx = rank; freeIdx < cols; ++freeIdx) {
-      std::vector<float> xPrime(cols, 0.0f);
+      std::vector xPrime(cols, 0.0f);
       xPrime[freeIdx] = 1.0f;
-      for (int i = int(rank) - 1; i >= 0; --i) {
-        float rhs = -M[size_t(i)][freeIdx];
-        for (size_t c = size_t(i) + 1; c < rank; ++c) {
-          rhs -= M[size_t(i)][c] * xPrime[c];
+      for (int i = static_cast<int>(rank) - 1; i >= 0; --i) {
+        float rhs = -M[static_cast<size_t>(i)][freeIdx];
+        for (size_t c = static_cast<size_t>(i) + 1; c < rank; ++c) {
+          rhs -= M[static_cast<size_t>(i)][c] * xPrime[c];
         }
-        float diagVal = M[size_t(i)][size_t(i)];
-        if (std::fabs(diagVal) > TOLERANCE) {
-          xPrime[size_t(i)] = rhs / diagVal;
+        if (const float diagVal = M[static_cast<size_t>(i)][static_cast<size_t>(i)]; std::fabs(diagVal) > TOLERANCE) {
+          xPrime[static_cast<size_t>(i)] = rhs / diagVal;
         } else {
-          xPrime[size_t(i)] = 0.0f;
+          xPrime[static_cast<size_t>(i)] = 0.0f;
         }
       }
-      std::vector<float> basis(cols, 0.0f);
+      std::vector basis(cols, 0.0f);
       for (size_t c = 0; c < cols; ++c) {
         basis[pivots[c]] = xPrime[c];
       }
@@ -709,11 +705,10 @@ namespace Math {
     }
     for (auto &v: nullSpace) {
       double sumSq = 0.0;
-      for (float val: v) {
-        sumSq += double(val) * double(val);
+      for (const float val: v) {
+        sumSq += static_cast<double>(val) * static_cast<double>(val);
       }
-      float nrm = static_cast<float>(std::sqrt(sumSq));
-      if (nrm > TOLERANCE) {
+      if (const auto nrm = static_cast<float>(std::sqrt(sumSq)); nrm > TOLERANCE) {
         for (float &val: v) {
           val /= nrm;
         }

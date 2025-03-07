@@ -6,7 +6,6 @@
 namespace Math {
   enum MatrixType { Identity, Zeros };
   class Matrix {
-private:
     std::vector<std::vector<float>> data_;
     size_t rows_{0}, cols_{0};
     static const float TOLERANCE;
@@ -32,11 +31,11 @@ public:
     [[nodiscard]] Matrix getCofactorMatrix() const;
     [[nodiscard]] Matrix getAdjugateMatrix() const;
     [[nodiscard]] Matrix inverse() const;
-    [[nodiscard]] bool isUpperTriangular(const float tolerance) const;
+    [[nodiscard]] bool isUpperTriangular(float tolerance) const;
     [[nodiscard]] Matrix getMinor(size_t row, size_t col) const;
     [[nodiscard]] float cofactor(size_t row, size_t col) const;
     [[nodiscard]] float trace() const;
-    [[nodiscard]] bool isOrthogonal(const float tolerance) const;
+    [[nodiscard]] bool isOrthogonal(float tolerance) const;
     [[nodiscard]] std::vector<float> calculateEigenvalues(int maxIterations = 100) const;
     [[nodiscard]] std::pair<Matrix, Matrix> qrDecomposition() const;
     [[nodiscard]] Matrix transpose() const;
