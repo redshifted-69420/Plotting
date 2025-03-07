@@ -1,6 +1,7 @@
 /build/*
 !/build/bin/
 /.DS_Store
+.idea/
 /.cache
 /cmake-build-debug
 /.idea

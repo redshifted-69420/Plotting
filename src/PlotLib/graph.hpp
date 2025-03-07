@@ -7,6 +7,7 @@
 #include FT_FREETYPE_H
 
 namespace Plot {
+  std::string generateLatexImage(const std::string &latexCode, float scale);
   struct Pixel {
     uint8_t r, g, b, a;
     Pixel() : r(0), g(0), b(0), a(255) {}
@@ -57,7 +58,9 @@ namespace Plot {
 
   struct Viewport {
     float xMin, xMax, yMin, yMax;
-    [[nodiscard]] bool contains(const float x, const float y) const { return x >= xMin && x <= xMax && y >= yMin && y <= yMax; }
+    [[nodiscard]] bool contains(const float x, const float y) const {
+      return x >= xMin && x <= xMax && y >= yMin && y <= yMax;
+    }
   };
 
   class Canvas {
@@ -93,6 +96,7 @@ public:
     static void renderLatex(Canvas &canvas, const std::string &latexCode, int x, int y, float scale = 1.0f,
                             const Pixel &textColor = Pixel::Black);
     static std::vector<Pixel> loadImage(const std::string &filename);
+    static void modifyCanvas(Canvas &canvas, const std::vector<Pixel> &pixels, int width, int height, int x, int y);
 
 private:
     struct GlyphInfo {
@@ -143,8 +147,8 @@ public:
       annotation.color = color;
       latexAnnotations.push_back(annotation);
     }
-    static std::u32string formatNumber(float value, const std::u32string &format = U"%.1f") ;
-    static void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size) ;
+    static std::u32string formatNumber(float value, const std::u32string &format = U"%.1f");
+    static void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size);
     void addPlot(const std::vector<float> &x, const std::vector<float> &y, const PlotStyle &style = PlotStyle());
 
     [[nodiscard]] Canvas render() const;
@@ -164,8 +168,8 @@ private:
     void drawPlot(Canvas &canvas, const std::vector<float> &x, const std::vector<float> &y,
                   const PlotStyle &style) const;
     void validateData(const std::vector<float> &x, const std::vector<float> &y) const;
-    static bool isValidNumber(float n) ;
-    static void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size) ;
+    static bool isValidNumber(float n);
+    static void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size);
     struct LatexAnnotation {
       std::string latex;
       float x{};

@@ -3,16 +3,21 @@
 #include <atomic>
 #include <boost/filesystem.hpp>
 #include <boost/process.hpp>
+#include <boost/process/child.hpp>
 #include <boost/process/io.hpp>
 #include <boost/scope_exit.hpp>
+#include <cairo.h>
+#include <cairo/cairo.h>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <filesystem>
 #include <fstream>
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <openssl/sha.h>
 #include <pango/pangocairo.h>
 #include <png.h>
 #include <sstream>
@@ -21,53 +26,57 @@
 #include <string_view>
 #include <unistd.h>
 #include <vector>
+#include "ThreadPool.hpp"
+#include "graph.hpp"
+
 
 namespace Plot {
 
+  namespace fs = std::filesystem;
+
   class LaTeXCache {
 public:
-    struct CacheEntry {
-      std::vector<Pixel> pixels;
-      int width{};
-      int height{};
-      float scale{};
-    };
-
     static LaTeXCache &getInstance() {
       static LaTeXCache instance;
       return instance;
     }
 
-    std::optional<CacheEntry> get(const std::string &latexCode, float scale, const Pixel &textColor) {
-      const std::string key = latexCode + "_" + std::to_string(scale) + "_" + std::to_string(textColor.r) + "_" +
-                        std::to_string(textColor.g) + "_" + std::to_string(textColor.b);
+    std::optional<std::string> getCachedFilePath(const std::string &latexCode, float scale, const Pixel &textColor) {
+      std::string key = generateHash(latexCode, scale, textColor);
+      std::string filePath = cacheDir + "/" + key + ".png";
 
-      std::lock_guard lock(cacheMutex);
-      if (const auto it = cache.find(key); it != cache.end()) {
-        return it->second;
+      if (fs::exists(filePath)) {
+        return filePath;
       }
       return std::nullopt;
     }
 
-    void store(const std::string &latexCode, const float scale, const Pixel &textColor, const std::vector<Pixel> &pixels,
-               const int width, const int height) {
-      const std::string key = latexCode + "_" + std::to_string(scale) + "_" + std::to_string(textColor.r) + "_" +
-                        std::to_string(textColor.g) + "_" + std::to_string(textColor.b);
-
-      std::lock_guard lock(cacheMutex);
-      if (cache.size() >= MAX_CACHE_SIZE) {
-        cache.erase(cache.begin());
-      }
-      cache[key] = {pixels, width, height, scale};
+    void store(const std::string &latexCode, float scale, const Pixel &textColor, const std::string &filePath) {
+      std::string key = generateHash(latexCode, scale, textColor);
+      fs::copy(filePath, cacheDir + "/" + key + ".png", fs::copy_options::overwrite_existing);
     }
-    LaTeXCache(const LaTeXCache &) = delete;
-    LaTeXCache &operator=(const LaTeXCache &) = delete;
+    void cleanupCache(size_t maxCacheSize);
+
 private:
-    LaTeXCache() = default;
-    ~LaTeXCache() = default;
-    static constexpr size_t MAX_CACHE_SIZE = 100;
-    std::mutex cacheMutex;
-    std::unordered_map<std::string, CacheEntry> cache;
+    LaTeXCache() {
+      cacheDir = fs::temp_directory_path().string() + "/LaTeXCache";
+      fs::create_directories(cacheDir);
+    }
+
+    std::string generateHash(const std::string &latexCode, float scale, const Pixel &textColor) {
+      std::string input = latexCode + std::to_string(scale) + std::to_string(textColor.r) +
+                          std::to_string(textColor.g) + std::to_string(textColor.b);
+      unsigned char hash[SHA256_DIGEST_LENGTH];
+      SHA256(reinterpret_cast<const unsigned char *>(input.c_str()), input.size(), hash);
+
+      std::stringstream ss;
+      for (unsigned char c: hash) {
+        ss << std::hex << (int) c;
+      }
+      return ss.str();
+    }
+
+    std::string cacheDir;
   };
 
   // Optimized PNG loading using RAII
@@ -141,9 +150,13 @@ public:
           const uint8_t *px = &(row[x * 4]);
           const uint8_t r = px[0], g = px[1], b = px[2], a = px[3];
           const float alphaFactor = static_cast<float>(a) * invScale;
-          blendedPixels[y * width + x] = Pixel(static_cast<uint8_t>(static_cast<float>(textColor.r) * (static_cast<float>(r) * invScale) * alphaFactor),
-                                               static_cast<uint8_t>(static_cast<float>(textColor.g) * (static_cast<float>(g) * invScale) * alphaFactor),
-                                               static_cast<uint8_t>(static_cast<float>(textColor.b) * (static_cast<float>(b) * invScale) * alphaFactor), a);
+          blendedPixels[y * width + x] = Pixel(static_cast<uint8_t>(static_cast<float>(textColor.r) *
+                                                                    (static_cast<float>(r) * invScale) * alphaFactor),
+                                               static_cast<uint8_t>(static_cast<float>(textColor.g) *
+                                                                    (static_cast<float>(g) * invScale) * alphaFactor),
+                                               static_cast<uint8_t>(static_cast<float>(textColor.b) *
+                                                                    (static_cast<float>(b) * invScale) * alphaFactor),
+                                               a);
         }
       }
 
@@ -276,10 +289,14 @@ public:
   void Canvas::drawRect(const int x, const int y, const int width, const int height, const Pixel &color,
                         const float thickness) {
     for (int i = 0; static_cast<float>(i) < thickness; i++) {
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i), static_cast<float>(y + i), color, 1.0f); // Top
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + i), static_cast<float>(y + height - 1 - i), color, 1.0f); // Left
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + height - 1 - i), static_cast<float>(x + width - 1 - i), static_cast<float>(y + height - 1 - i), color, 1.0f); // Bottom
-      drawLine(static_cast<float>(x + width - 1 - i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i), static_cast<float>(y + height - 1 - i), color, 1.0f); // Right
+      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i),
+               static_cast<float>(y + i), color, 1.0f); // Top
+      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + i),
+               static_cast<float>(y + height - 1 - i), color, 1.0f); // Left
+      drawLine(static_cast<float>(x + i), static_cast<float>(y + height - 1 - i), static_cast<float>(x + width - 1 - i),
+               static_cast<float>(y + height - 1 - i), color, 1.0f); // Bottom
+      drawLine(static_cast<float>(x + width - 1 - i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i),
+               static_cast<float>(y + height - 1 - i), color, 1.0f); // Right
     }
   }
 
@@ -295,14 +312,16 @@ public:
 
     // --- X-Axis ---
     if (xAxisProps_.visible) {
-      canvas.drawLine(static_cast<float>(plotX), static_cast<float>(plotY + plotHeight), static_cast<float>(plotX + plotWidth), static_cast<float>(plotY + plotHeight), xAxisProps_.color,
+      canvas.drawLine(static_cast<float>(plotX), static_cast<float>(plotY + plotHeight),
+                      static_cast<float>(plotX + plotWidth), static_cast<float>(plotY + plotHeight), xAxisProps_.color,
                       xAxisProps_.thickness);
 
       for (float x = xRange_.first; x <= xRange_.second; x += xAxisProps_.tickSpacing) {
         const int xPixel = worldToPixelX(x);
 
-        canvas.drawLine(static_cast<float>(xPixel), static_cast<float>(plotY + plotHeight), static_cast<float>(xPixel), static_cast<float>(plotY + plotHeight) + xAxisProps_.tickLength,
-                        xAxisProps_.color, xAxisProps_.thickness);
+        canvas.drawLine(static_cast<float>(xPixel), static_cast<float>(plotY + plotHeight), static_cast<float>(xPixel),
+                        static_cast<float>(plotY + plotHeight) + xAxisProps_.tickLength, xAxisProps_.color,
+                        xAxisProps_.thickness);
 
         if (xAxisProps_.showLabels) {
           std::u32string label = formatNumber(x, xAxisProps_.labelFormat);
@@ -506,7 +525,8 @@ public:
       drawPlot(canvas, x, y, plotStyles_[i]);
     }
     const float xScale = static_cast<float>(width_ - padding_.left - padding_.right) / (xRange_.second - xRange_.first);
-    const float yScale = static_cast<float>(height_ - padding_.top - padding_.bottom) / (yRange_.second - yRange_.first);
+    const float yScale =
+            static_cast<float>(height_ - padding_.top - padding_.bottom) / (yRange_.second - yRange_.first);
     for (const auto &[latex, x, y, scale, color]: latexAnnotations) {
       const int pixelX = padding_.left + static_cast<int>((x - xRange_.first) * xScale);
       const int pixelY = canvas.getHeight() - padding_.bottom - static_cast<int>((y - yRange_.first) * yScale);
@@ -520,20 +540,26 @@ public:
     // Convert grid spacing from screen pixels to data units
     const int plotWidth = getPlotWidth();
     const int plotHeight = getPlotHeight();
-    const float xSpacing = static_cast<float>(gridProps_.spacing) * (xRange_.second - xRange_.first) / static_cast<float>(plotWidth);
-    const float ySpacing = static_cast<float>(gridProps_.spacing) * (yRange_.second - yRange_.first) / static_cast<float>(plotHeight);
+    const float xSpacing =
+            static_cast<float>(gridProps_.spacing) * (xRange_.second - xRange_.first) / static_cast<float>(plotWidth);
+    const float ySpacing =
+            static_cast<float>(gridProps_.spacing) * (yRange_.second - yRange_.first) / static_cast<float>(plotHeight);
 
     // Draw vertical grid lines
     for (float x = std::ceil(xRange_.first / xSpacing) * xSpacing; x <= xRange_.second; x += xSpacing) {
-      const float screenX = static_cast<float>(padding_.left) + (x - xRange_.first) / (xRange_.second - xRange_.first) * static_cast<float>(plotWidth);
-      canvas.drawLine(screenX, static_cast<float>(padding_.top), screenX, static_cast<float>(height_) - static_cast<float>(padding_.bottom), gridProps_.color,
+      const float screenX = static_cast<float>(padding_.left) +
+                            (x - xRange_.first) / (xRange_.second - xRange_.first) * static_cast<float>(plotWidth);
+      canvas.drawLine(screenX, static_cast<float>(padding_.top), screenX,
+                      static_cast<float>(height_) - static_cast<float>(padding_.bottom), gridProps_.color,
                       gridProps_.lineThickness);
     }
 
     // Draw horizontal grid lines
     for (float y = std::ceil(yRange_.first / ySpacing) * ySpacing; y <= yRange_.second; y += ySpacing) {
-      const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) - (y - yRange_.first) / (yRange_.second - yRange_.first) * static_cast<float>(plotHeight);
-      canvas.drawLine(static_cast<float>(padding_.left), screenY, static_cast<float>(width_) - static_cast<float>(padding_.right), screenY, gridProps_.color,
+      const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
+                            (y - yRange_.first) / (yRange_.second - yRange_.first) * static_cast<float>(plotHeight);
+      canvas.drawLine(static_cast<float>(padding_.left), screenY,
+                      static_cast<float>(width_) - static_cast<float>(padding_.right), screenY, gridProps_.color,
                       gridProps_.lineThickness);
     }
   }
@@ -560,7 +586,8 @@ public:
                            (y[i - 1] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
           const float x2 =
                   static_cast<float>(padding_.left) + (x[i] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
-          const float y2 = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) - (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
+          const float y2 = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
+                           (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
 
           canvas.drawLineClipped(x1, y1, x2, y2, style.color, style.lineWidth);
         }
@@ -569,8 +596,10 @@ public:
 
     if (style.plotType == PlotStyle::Type::Scatter || style.plotType == PlotStyle::Type::Both) {
       for (size_t i = 0; i < x.size(); ++i) {
-        const float screenX = static_cast<float>(padding_.left) + (x[i] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
-        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) - (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
+        const float screenX =
+                static_cast<float>(padding_.left) + (x[i] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
+        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
+                              (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
         drawPoint(canvas, screenX, screenY, style.color, style.pointSize);
       }
     }
@@ -580,8 +609,10 @@ public:
         const float x_max = xRange_.second == 0.0f ? *std::ranges::max_element(x) : xRange_.second;
         const float y_min = yRange_.first == 0.0f ? *std::ranges::min_element(y) : yRange_.first;
         const float y_max = yRange_.second == 0.0f ? *std::ranges::max_element(y) : yRange_.second;
-        const float screenX = static_cast<float>(padding_.left) + (x[i] - x_min) / (x_max - x_min) * static_cast<float>(getPlotWidth());
-        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(getPlotHeight()) - (y[i] - y_min) / (y_max - y_min) * static_cast<float>(getPlotHeight());
+        const float screenX = static_cast<float>(padding_.left) +
+                              (x[i] - x_min) / (x_max - x_min) * static_cast<float>(getPlotWidth());
+        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(getPlotHeight()) -
+                              (y[i] - y_min) / (y_max - y_min) * static_cast<float>(getPlotHeight());
         drawMarker(canvas, screenX, screenY, style.color, style.marker, style.markerSize);
       }
     }
@@ -906,7 +937,7 @@ public:
     xend = std::round(x2);
     yend = y2 + gradient * (xend - x2);
     const int xpxl2 = static_cast<int>(xend);
-    static_cast<int>(yend);
+    int ypxl2 = static_cast<int>(yend);
 
     // Main loop
     if (steep) {
@@ -924,103 +955,93 @@ public:
     }
   }
 
+  static ThreadPool latexThreadPool(std::thread::hardware_concurrency());
+
   void TextRenderer::renderLatex(Canvas &canvas, const std::string &latexCode, int x, int y, float scale,
                                  const Pixel &textColor) {
-    // Check cache first
     auto &cache = LaTeXCache::getInstance();
+    auto cachedPath = cache.getCachedFilePath(latexCode, scale, textColor);
 
-    if (auto cachedEntry = cache.get(latexCode, scale, textColor)) {
-      // Use cached result
-      canvas.blendImage(cachedEntry->pixels, cachedEntry->width, cachedEntry->height, x, y, 1.0f);
+    if (cachedPath) {
+      PNGLoader pngLoader(*cachedPath);
+      auto pixels = pngLoader.readImageData(textColor);
+      canvas.blendImage(pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y, 1.0f);
       return;
     }
 
-    namespace fs = boost::filesystem;
+    // Use thread pool to render LaTeX asynchronously
+    latexThreadPool.enqueue([&]() { // Capture cache & canvas by reference
+      std::string generatedImagePath = generateLatexImage(latexCode, scale);
+      cache.store(latexCode, scale, textColor, generatedImagePath);
 
-    // Create a unique temporary directory with unique ID to avoid collisions in parallel calls
+      PNGLoader pngLoader(generatedImagePath);
+      auto pixels = pngLoader.readImageData(textColor);
+
+      // Modify canvas in a separate function
+      modifyCanvas(canvas, pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y);
+    });
+  }
+
+  void TextRenderer::modifyCanvas(Canvas &canvas, const std::vector<Pixel> &pixels, int width, int height, int x,
+                                  int y) {
+    canvas.blendImage(pixels, width, height, x, y, 1.0f);
+  }
+
+  void LaTeXCache::cleanupCache(size_t maxCacheSize) {
+    std::vector<std::pair<std::string, std::time_t>> files;
+
+    for (const auto &entry: fs::directory_iterator(cacheDir)) {
+      files.emplace_back(entry.path().string(), fs::last_write_time(entry.path()).time_since_epoch().count());
+    }
+
+    if (files.size() > maxCacheSize) {
+      std::sort(files.begin(), files.end(), [](auto &a, auto &b) { return a.second < b.second; });
+
+      for (size_t i = 0; i < files.size() - maxCacheSize; ++i) {
+        fs::remove(files[i].first);
+      }
+    }
+  }
+
+  std::string generateLatexImage(const std::string &latexCode, float scale) {
+    namespace fs = std::filesystem;
+
+    // Create a unique temporary directory
     static std::atomic<uint64_t> uniqueCounter{0};
     uint64_t currentId = uniqueCounter.fetch_add(1, std::memory_order_relaxed);
-
-    fs::path tempDir =
-            fs::unique_path(fs::temp_directory_path() / ("PlotLib_" + std::to_string(currentId) + "_%%%%_%%%%_%%%%"));
+    fs::path tempDir = fs::temp_directory_path() / ("LaTeX_" + std::to_string(currentId));
     fs::create_directories(tempDir);
-    const std::string tempDirStr = tempDir.string();
 
-    // Ensure cleanup of the temporary directory using RAII
-    BOOST_SCOPE_EXIT_ALL(&tempDir) {
-      try {
-        fs::remove_all(tempDir);
-      } catch (...) {
-        // Ignore cleanup errors
-      }
-    };
+    std::string texFilePath = tempDir.string() + "/equation.tex";
+    std::string pdfPath = tempDir.string() + "/equation.pdf";
+    std::string pngPath = tempDir.string() + "/equation.png";
 
-    // Optimize LaTeX template - precompile common parts
-    static const std::string LATEX_TEMPLATE_PREFIX = "\\documentclass[preview]{standalone}\n"
-                                                     "\\usepackage{amsmath,amssymb}\n"
-                                                     "\\usepackage[utf8]{inputenc}\n"
-                                                     "\\pagestyle{empty}\n"
-                                                     "\\begin{document}\n$";
+    // LaTeX document template
+    std::ofstream texFile(texFilePath);
+    texFile << "\\documentclass[preview]{standalone}\n"
+               "\\usepackage{amsmath,amssymb}\n"
+               "\\usepackage[utf8]{inputenc}\n"
+               "\\pagestyle{empty}\n"
+               "\\begin{document}\n"
+            << "$" << latexCode << "$\n"
+            << "\\end{document}\n";
+    texFile.close();
 
-    static const std::string LATEX_TEMPLATE_SUFFIX = "$\n\\end{document}\n";
+    // Compile LaTeX to PDF
+    std::string pdflatexCmd =
+            "pdflatex -interaction=batchmode -halt-on-error -output-directory=" + tempDir.string() + " " + texFilePath;
+    CommandExecutor::execute(pdflatexCmd);
 
-    // Write the LaTeX file more efficiently
-    const std::string texFilePath = tempDirStr + "/equation.tex";
-    {
-      std::ofstream texFile(texFilePath, std::ios::out | std::ios::binary);
-      if (!texFile) {
-        throw std::runtime_error("Could not create LaTeX file.");
-      }
-
-      texFile << LATEX_TEMPLATE_PREFIX;
-      texFile << latexCode;
-      texFile << LATEX_TEMPLATE_SUFFIX;
+    if (!fs::exists(pdfPath)) {
+      throw std::runtime_error("LaTeX failed: PDF not generated at " + pdfPath);
     }
 
-    // File paths
-    const std::string pdfPath = tempDirStr + "/equation.pdf";
-    const std::string pngPath = tempDirStr + "/equation.png";
+    // Convert PDF to PNG
+    std::string convertCmd =
+            "gs -q -dQUIET -dSAFER -dBATCH -dNOPAUSE -sDEVICE=pngalpha -r300 -o " + pngPath + " " + pdfPath;
+    CommandExecutor::execute(convertCmd);
 
-    // Compile directly to PDF using pdflatex (more efficient than DVI)
-    const std::string pdflatexCmd =
-            "pdflatex -interaction=batchmode -halt-on-error -output-directory=" + tempDirStr + " " + texFilePath;
-
-    try {
-      CommandExecutor::execute(pdflatexCmd);
-    } catch (const std::exception &e) {
-      throw std::runtime_error("LaTeX compilation failed: " + std::string(e.what()));
-    }
-
-    // Convert PDF directly to PNG using high-quality settings
-    std::string convertCmd = "gs -q -dQUIET -dSAFER -dBATCH -dNOPAUSE -dNOPROMPT -dMaxBitmap=500000000 "
-                             "-dAlignToPixels=0 -dGridFitTT=2 -sDEVICE=pngalpha -dTextAlphaBits=4 "
-                             "-dGraphicsAlphaBits=4 -r" +
-                             std::to_string(static_cast<int>(300 * scale)) + " -o " + pngPath + " " + pdfPath;
-
-    try {
-      CommandExecutor::execute(convertCmd);
-    } catch (const std::exception &e) {
-      // Fallback to ImageMagick if Ghostscript fails
-      try {
-        convertCmd = "magick -density " + std::to_string(static_cast<int>(300 * scale)) + " " + pdfPath +
-                     " -quality 100 -trim " + pngPath;
-        CommandExecutor::execute(convertCmd);
-      } catch (const std::exception &e2) {
-        throw std::runtime_error("Image conversion failed: " + std::string(e2.what()));
-      }
-    }
-
-    // Load and process the PNG image using our optimized loader
-    PNGLoader pngLoader(pngPath);
-    std::vector<Pixel> blendedPixels = pngLoader.readImageData(textColor);
-    int width = pngLoader.getWidth();
-    int height = pngLoader.getHeight();
-
-    // Store in cache for future use
-    cache.store(latexCode, scale, textColor, blendedPixels, width, height);
-
-    // Finally, blend into canvas
-    canvas.blendImage(blendedPixels, width, height, x, y, 1.0f);
+    return pngPath; // Return the path of the generated PNG
   }
 
   void Canvas::blendImage(const std::vector<Pixel> &image, int imgWidth, int imgHeight, int x, int y, float alpha) {

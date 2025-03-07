@@ -39,6 +39,11 @@ set(HARFBUZZ_LIBRARIES "-lharfbuzz")
 include_directories(${HARFBUZZ_INCLUDE_DIRS})
 link_directories(${HARFBUZZ_LIBRARY_DIRS})
 
+set(OPENSSL_ROOT_DIR /opt/homebrew/opt/openssl@3)
+set(OPENSSL_INCLUDE_DIR /opt/homebrew/opt/openssl@3/include)
+set(OPENSSL_LIBRARIES /opt/homebrew/opt/openssl@3/lib)
+
+find_package(OpenSSL REQUIRED)
 
 # Debugging output to verify detection
 message(STATUS "Pango include directories: ${PANGO_INCLUDE_DIRS}")
@@ -60,6 +65,7 @@ target_include_directories(Plot PRIVATE
     ${FREETYPE_INCLUDE_DIRS}
     ${CAIRO_INCLUDE_DIRS}
     ${PANGO_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
 )
 
 # Link directories
@@ -79,6 +85,7 @@ target_link_libraries(Plot PRIVATE
     ${PANGO_LIBRARIES}
     ${GLIB_LIBRARIES}
     ${HARFBUZZ_LIBRARIES}
+    ${OPENSSL_LIBRARIES} OpenSSL::Crypto
 )
 
 
