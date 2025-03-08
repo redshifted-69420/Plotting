@@ -321,7 +321,7 @@ int main() {
     figure.addLatexAnnotation("y = \\sin(x) \\cdot e^{-|x|/5}", 2.25f, 0.6f, 1.5f);
 
     Plot::Canvas canvas = figure.render("damped_oscillations.png");
-    figure.render("damped_oscillations.svg");
+    Plot::Canvas canvas2  = figure.render("damped_oscillations.svg");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;

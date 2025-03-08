@@ -56,12 +56,17 @@ make
 # Run the executable
 ./bin/Plot
 ```
+### Example Renders
+
+![One of the out put](cmake-build-debug/bin/damped_oscillations.png)
+![One of the out put](cmake-build-debug/bin/plot2.png)
+![One of the out put](cmake-build-debug/bin/gaussian_plot.png)
 
 ## Usage Examples
 
 ### Basic Line Plot
 
-```cpp
+```c++
 #include "PlotLib/graph.hpp"
 #include "MathLib/mathlib.hpp"
 
@@ -96,7 +101,7 @@ int main() {
 
 ### Multiple Plots with Custom Styling
 
-```cpp
+```c++
 #include "PlotLib/graph.hpp"
 #include "MathLib/mathlib.hpp"
 
@@ -147,7 +152,7 @@ int main() {
 
 The library includes a comprehensive matrix operations module:
 
-```cpp
+```c++
 #include "MathLib/Matrix.hpp"
 
 int main() {
@@ -175,7 +180,7 @@ int main() {
 
 The library provides a wide range of mathematical functions for vector operations:
 
-```cpp
+```c++
 #include "MathLib/mathlib.hpp"
 #include <iostream>
 
@@ -207,4 +212,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the IISER-B License - see the LICENSE file for details.
