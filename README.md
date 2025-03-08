@@ -58,9 +58,9 @@ make
 ```
 ### Example Renders
 
-![One of the out put](cmake-build-debug/bin/damped_oscillations.png)
-![One of the out put](cmake-build-debug/bin/plot2.png)
-![One of the out put](cmake-build-debug/bin/gaussian_plot.png)
+![One of the out put](build/bin/damped_oscillations.png)
+![One of the out put](build/bin/plot2.png)
+![One of the out put](build/bin/gaussian_plot.png)
 
 ## Usage Examples
 
