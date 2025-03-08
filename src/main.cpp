@@ -321,7 +321,7 @@ int main() {
     figure.addLatexAnnotation("y = \\sin(x) \\cdot e^{-|x|/5}", 2.25f, 0.6f, 1.5f);
 
     Plot::Canvas canvas = figure.render("damped_oscillations.png");
-    Plot::Canvas canvas2  = figure.render("damped_oscillations.svg");
+    Plot::Canvas canvas2 = figure.render("damped_oscillations.svg");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
@@ -337,21 +337,32 @@ int main() {
     return 1;
   }
 
-  Math::Matrix matrix1 = {{-1.0, 2.0, 3.0, 4.0, 5.0},
-                          {6.0, 7.0, 8.0, 9.0, 10.0},
-                          {11.0, 12.1, 13.4, 14.4, 15.8},
-                          {16.9, 17.8, 18.0, 19.7, 20.6},
-                          {21.3, 22.2, 23.6, 24.1, 25.0}};
-  Math::Matrix matrix2 = {{-1.0, 2.0, 3.0, 4.0, 5.0},
-                          {16.9, 17.8, 18.0, 19.7, 20.6},
-                          {11.0, 12.1, 13.4, 14.4, 15.8},
-                          {6.0, 7.0, 8.0, 9.0, 10.0},
-                          {21.3, 22.2, 23.6, 24.1, 25.0}};
-  auto start = std::chrono::high_resolution_clock::now(); // Start timing
-  Math::Matrix result = matrix1 * matrix2;
-  auto end = std::chrono::high_resolution_clock::now(); // End timing
-  std::chrono::duration<double> duration = end - start;
-  std::cout << "Execution time: " << duration.count() << " seconds" << std::endl;
-  result.print();
+  Matrix A = Matrix::random(8192, 8192);
+  Matrix B = Matrix::random(8192, 8192);
+  Matrix C = Matrix::random(8192, 8192);
+
+  // Measure time for Adaptive multiplication
+  auto start = std::chrono::high_resolution_clock::now();
+  Matrix C_adaptive = A * B;
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration_adaptive = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "Adaptive Execution Time: " << duration_adaptive.count() << " ms" << std::endl;
+
+  // Measure time for Trasnpose
+  start = std::chrono::high_resolution_clock::now();
+  Matrix T = C.transpose();
+  end = std::chrono::high_resolution_clock::now();
+  auto duration_inverse = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "Trasnpose Time: " << duration_inverse.count() << " ms" << std::endl;
+
+  std::cout << T.toString();
+
+  start = std::chrono::high_resolution_clock::now();
+  Matrix D = A + B;
+  end = std::chrono::high_resolution_clock::now();
+  auto duration_add = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+  std::cout << "Trasnpose Time: " << duration_add.count() << " ms" << std::endl;
+  std::cout << D.toString();
+
   return 0;
 }

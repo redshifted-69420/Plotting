@@ -12,6 +12,8 @@ find_package(Freetype REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(PkgConfig REQUIRED)
 
+add_definitions(-DACCELERATE_NEW_LAPACK -DACCELERATE_LAPACK_ILP64)
+
 # Find Pango and Cairo
 pkg_check_modules(PANGO REQUIRED pango)
 pkg_check_modules(CAIRO REQUIRED cairo)
@@ -56,7 +58,7 @@ add_executable(Plot
     src/main.cpp
     src/MathLib/mathlib.cpp
     src/PlotLib/graph.cpp
-    src/MathLib/Matrix.cpp
+    src/MathLib/Matrix.mm
 )
 
 # Include directories
@@ -86,10 +88,60 @@ target_link_libraries(Plot PRIVATE
     ${GLIB_LIBRARIES}
     ${HARFBUZZ_LIBRARIES}
     ${OPENSSL_LIBRARIES} OpenSSL::Crypto
+    "-framework Accelerate"
+    "-framework Foundation"
+    "-framework Metal"
+    "-framework MetalPerformanceShaders"
 )
 
+# Add Accelerate framework for macOS arm64
+if(APPLE)
+  find_library(ACCELERATE_FRAMEWORK Accelerate)
+  if(ACCELERATE_FRAMEWORK)
+    target_link_libraries(Plot PRIVATE ${ACCELERATE_FRAMEWORK})
+  else()
+    message(FATAL_ERROR "Accelerate framework not found")
+  endif()
+endif()
 
 # Set output directory
 set_target_properties(Plot PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+# Compile the Metal shader into a library
+if(APPLE)
+    # Path to the Metal shader file
+    set(METAL_SHADER_SOURCE "${CMAKE_SOURCE_DIR}/src/MathLib/matrix_add.metal")
+
+    # Output files for the Metal shader compilation
+    set(METAL_SHADER_AIR "${CMAKE_BINARY_DIR}/matrix_add.air")
+    set(METAL_SHADER_METALLIB "${CMAKE_BINARY_DIR}/default.metallib")
+
+    # Compile the Metal shader into an AIR file
+    add_custom_command(
+        OUTPUT ${METAL_SHADER_AIR}
+        COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
+        DEPENDS ${METAL_SHADER_SOURCE}
+        COMMENT "Compiling Metal shader to AIR"
+    )
+
+    # Link the AIR file into a Metal library
+    add_custom_command(
+        OUTPUT ${METAL_SHADER_METALLIB}
+        COMMAND xcrun -sdk macosx metallib ${METAL_SHADER_AIR} -o ${METAL_SHADER_METALLIB}
+        DEPENDS ${METAL_SHADER_AIR}
+        COMMENT "Linking Metal shader into a library"
+    )
+
+    # Add the Metal library as a dependency to the Plot target
+    add_custom_target(MetalShader ALL DEPENDS ${METAL_SHADER_METALLIB})
+    add_dependencies(Plot MetalShader)
+
+    # Copy the Metal library to the output directory
+    add_custom_command(
+        TARGET Plot POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy ${METAL_SHADER_METALLIB} ${CMAKE_BINARY_DIR}/bin/default.metallib
+        COMMENT "Copying Metal library to output directory"
+    )
+endif()

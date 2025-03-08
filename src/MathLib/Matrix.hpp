@@ -1,56 +1,69 @@
 #ifndef MATRIX_H
 #define MATRIX_H
 
+#include <string>
 #include <vector>
 
-namespace Math {
-  enum MatrixType { Identity, Zeros };
-  class Matrix {
-    std::vector<std::vector<float>> data_;
-    size_t rows_{0}, cols_{0};
-    static const float TOLERANCE;
+class Matrix {
+  public:
+  // Constructors
+  Matrix(); // Default constructor
+  Matrix(size_t rows, size_t cols); // Create a zero-initialized matrix
+  Matrix(size_t rows, size_t cols,
+         const std::vector<float> &data); // Create from vector
+  Matrix(size_t rows, size_t cols, float *data); // Create from raw array
+  Matrix(const Matrix &other); // Copy constructor
+  Matrix(Matrix &&other) noexcept; // Move constructor
+  ~Matrix(); // Destructor
 
-public:
-    Matrix() = default;
+  // Assignment operators
+  Matrix &operator=(const Matrix &other);
+  Matrix &operator=(Matrix &&other) noexcept;
 
-    [[nodiscard]] Matrix(std::initializer_list<std::initializer_list<double>> init);
-    [[nodiscard]] explicit Matrix(const std::vector<std::vector<float>> &mat_vals) :
-        data_(mat_vals), rows_(mat_vals.size()), cols_(mat_vals.empty() ? 0 : mat_vals[0].size()) {}
-    [[nodiscard]] Matrix(size_t rows, size_t cols, MatrixType type = Zeros);
-    void print() const;
-    [[nodiscard]] size_t getRows() const { return rows_; }
-    [[nodiscard]] size_t getCols() const { return cols_; }
-    [[nodiscard]] float &at(size_t i, size_t j);
-    [[nodiscard]] const float &at(size_t i, size_t j) const;
-    [[nodiscard]] float determinant() const;
-    [[nodiscard]] Matrix multiply(const Matrix &other) const;
-    [[nodiscard]] Matrix multiplyStandard(const Matrix &other) const;
-    [[nodiscard]] Matrix operator*(const Matrix &other) const { return multiply(other); }
-    [[nodiscard]] Matrix operator+(const Matrix &other) const;
-    [[nodiscard]] Matrix operator-(const Matrix &other) const;
-    [[nodiscard]] Matrix getCofactorMatrix() const;
-    [[nodiscard]] Matrix getAdjugateMatrix() const;
-    [[nodiscard]] Matrix inverse() const;
-    [[nodiscard]] bool isUpperTriangular(float tolerance) const;
-    [[nodiscard]] Matrix getMinor(size_t row, size_t col) const;
-    [[nodiscard]] float cofactor(size_t row, size_t col) const;
-    [[nodiscard]] float trace() const;
-    [[nodiscard]] bool isOrthogonal(float tolerance) const;
-    [[nodiscard]] std::vector<float> calculateEigenvalues(int maxIterations = 100) const;
-    [[nodiscard]] std::pair<Matrix, Matrix> qrDecomposition() const;
-    [[nodiscard]] Matrix transpose() const;
-    [[nodiscard]] static float vectorNorm(const std::vector<float> &vec);
-    [[nodiscard]] std::vector<float> getDiagonal() const;
-    [[nodiscard]] std::pair<size_t, size_t> rank() const;
-    [[nodiscard]] Matrix elementWiseMultiply(const Matrix &other) const;
-    [[nodiscard]] std::pair<Matrix, Matrix> luDecomposition() const;
-    [[nodiscard]] std::vector<std::vector<float>> findNullVectors() const;
-    [[nodiscard]] Matrix padMatrix(size_t newSize) const;
-    [[nodiscard]] Matrix subMatrix(size_t startRow, size_t startCol, size_t numRows, size_t numCols) const;
-    [[nodiscard]] static Matrix coppersmithWinograd(const Matrix &A, const Matrix &B);
-    [[nodiscard]] Matrix multiplyBlocked(const Matrix &other) const;
-  };
+  // Matrix operations
+  [[nodiscard]] Matrix operator*(const Matrix &other) const { return multiply(other); };
+  Matrix operator+(const Matrix &other) const {
+    bool usedMetal = false;
+    return adaptiveMatrixAdd(*this, other, usedMetal);
+  }
 
-  constexpr float Matrix::TOLERANCE = 1e-10;
-}; // namespace Math
+
+  // Basic operations
+  Matrix transpose() const;
+  static Matrix random(size_t rows, size_t cols, float min = -10.0f, float max = 10.0f);
+
+  // Accessors
+  float &at(size_t row, size_t col);
+  const float &at(size_t row, size_t col) const;
+  float *data();
+  const float *data() const;
+  size_t rows() const;
+  size_t cols() const;
+  size_t size() const;
+
+  // Comparison
+  bool operator==(const Matrix &other) const;
+  bool operator!=(const Matrix &other) const;
+  float maxDifference(const Matrix &other) const;
+  float meanDifference(const Matrix &other) const;
+  float relativeErrorNorm(const Matrix &other) const;
+
+  // Output
+  std::string toString() const;
+
+  private:
+  size_t m_rows;
+  size_t m_cols;
+  std::vector<float> m_data;
+
+  private:
+  Matrix multiplyAdaptive(const Matrix &other) const; // Adaptive variant
+  Matrix multiplyBLAS(const Matrix &other) const; // BLAS variant
+  Matrix multiplyMetal(const Matrix &other) const; // Metal variant
+  Matrix multiply(const Matrix &other) const; // General multiplication
+  Matrix matrixAddMetal(const Matrix &A, const Matrix &B) const;
+  Matrix matrixAddAccelerate(const Matrix &A, const Matrix &B) const;
+  Matrix adaptiveMatrixAdd(const Matrix &A, const Matrix &B, bool &usedMetal) const;
+};
+
 #endif // MATRIX_H
