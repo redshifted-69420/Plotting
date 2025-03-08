@@ -6,25 +6,6 @@
 #include "PlotLib/graph.hpp"
 
 int main() {
-  const char *fontPaths[] = {
-          "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf", "/System/Library/Fonts/Times.ttc",
-          "/Users/redshifted/code/C++/Graphing/Plotting(New)/src/Fonts/RobotoMono-VariableFont_wght.ttf"};
-
-  bool fontLoaded = false;
-  for (const char *fontPath: fontPaths) {
-    try {
-      Plot::TextRenderer::initialize(fontPath);
-      fontLoaded = true;
-      break;
-    } catch (const std::exception &e) {
-      std::cerr << "Warning: Failed to load font " << fontPath << ": " << e.what() << std::endl;
-    }
-  }
-
-  if (!fontLoaded) {
-    throw std::runtime_error("Failed to load any font");
-  }
-
   try {
     auto start = std::chrono::high_resolution_clock::now(); // Start timing
     const std::vector<float> x = Math::linspace(-20.0f, 20.0f, 1000);
@@ -355,8 +336,6 @@ int main() {
     std::cerr << "Unknown error occurred" << std::endl;
     return 1;
   }
-
-  Plot::TextRenderer::shutdown();
 
   Math::Matrix matrix1 = {{-1.0, 2.0, 3.0, 4.0, 5.0},
                           {6.0, 7.0, 8.0, 9.0, 10.0},

@@ -17,6 +17,7 @@
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <mach-o/dyld.h>
 #include <openssl/sha.h>
 #include <pango/pangocairo.h>
 #include <png.h>
@@ -279,6 +280,73 @@ public:
       throw std::invalid_argument("Canvas dimensions must be positive");
     }
   }
+
+  namespace {
+    bool fontInitialized = false;
+  }
+
+  std::string getExecutablePath() {
+    char buffer[1024];
+    uint32_t size = sizeof(buffer);
+    if (_NSGetExecutablePath(buffer, &size) != 0) {
+      throw std::runtime_error("Error: Unable to get executable path");
+    }
+    return fs::canonical(buffer).parent_path().string();
+  }
+
+  std::string getFontsDirectory() {
+    // Get the absolute path to the executable
+    fs::path exeDir = getExecutablePath();
+
+    // Navigate back to the project root (assumes the executable is inside `build/bin/`)
+    fs::path projectRoot = exeDir.parent_path().parent_path(); // Move up from `build/bin/`
+    fs::path fontsPath = projectRoot / "src/Fonts";
+
+    if (fs::exists(fontsPath) && fs::is_directory(fontsPath)) {
+      return fontsPath.string();
+    }
+
+    throw std::runtime_error("Error: Fonts directory not found at " + fontsPath.string());
+  }
+
+  std::vector<std::string> getFontFiles(const std::string &directory) {
+    std::vector<std::string> fonts;
+    if (fs::exists(directory) && fs::is_directory(directory)) {
+      for (const auto &entry: fs::directory_iterator(directory)) {
+        if (entry.path().extension() == ".ttf" || entry.path().extension() == ".otf") {
+          fonts.push_back(entry.path().string());
+        }
+      }
+    }
+    return fonts;
+  }
+
+  void initializeFont() {
+    if (fontInitialized)
+      return;
+
+    std::string fontsDir = getFontsDirectory();
+    std::vector<std::string> fontPaths = getFontFiles(fontsDir);
+
+    if (fontPaths.empty()) {
+      throw std::runtime_error("Error: No fonts found in " + fontsDir);
+    }
+
+    for (const auto &fontPath: fontPaths) {
+      try {
+        Plot::TextRenderer::initialize(fontPath.c_str());
+        fontInitialized = true;
+        std::cout << "Font successfully loaded from: " << fontPath << std::endl;
+        return;
+      } catch (const std::exception &e) {
+        std::cerr << "Warning: Failed to load font " << fontPath << ": " << e.what() << std::endl;
+      }
+    }
+
+    throw std::runtime_error("Failed to load any font");
+  }
+
+  AxisProperties::AxisProperties() { initializeFont(); }
 
   void Figure::setAxisProperties(const AxisProperties &xProps, const AxisProperties &yProps) {
     xAxisProps_ = xProps;

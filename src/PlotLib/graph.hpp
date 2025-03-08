@@ -55,6 +55,7 @@ namespace Plot {
     float tickLength = 5.0f;
     float tickSpacing = 1.0f;
     std::u32string labelFormat = U"%.1f";
+    AxisProperties();
   };
 
   struct Viewport {
