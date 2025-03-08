@@ -55,6 +55,7 @@ public:
       std::string key = generateHash(latexCode, scale, textColor);
       fs::copy(filePath, cacheDir + "/" + key + ".png", fs::copy_options::overwrite_existing);
     }
+
     void cleanupCache(size_t maxCacheSize);
 
 private:
@@ -1118,24 +1119,21 @@ public:
       return;
     }
 
-    // Use thread pool to render LaTeX asynchronously
-    latexThreadPool.enqueue([&]() {
-      std::string generatedImagePath = generateLatexImage(latexCode, scale);
-      cache.store(latexCode, scale, textColor, generatedImagePath);
+    // Render LaTeX synchronously
+    std::string generatedImagePath = generateLatexImage(latexCode, scale);
+    cache.store(latexCode, scale, textColor, generatedImagePath);
 
-      PNGLoader pngLoader(generatedImagePath);
-      auto pixels = pngLoader.readImageData(textColor);
+    PNGLoader pngLoader(generatedImagePath);
+    auto pixels = pngLoader.readImageData(textColor);
+    canvas.blendImage(pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y, 1.0f);
 
-      modifyCanvas(canvas, pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y);
-
-      // Ensure the generated file exists before adding it to SVG
-      if (!generatedImagePath.empty()) {
-        std::stringstream svgImage;
-        svgImage << "<image x=\"" << x << "\" y=\"" << y << "\" width=\"" << pngLoader.getWidth() << "\" height=\""
-                 << pngLoader.getHeight() << "\" xlink:href=\"" << generatedImagePath << "\" />";
-        canvas.svgElements.push_back({"image", svgImage.str()});
-      }
-    });
+    // Ensure the generated file exists before adding it to SVG
+    if (!generatedImagePath.empty()) {
+      std::stringstream svgImage;
+      svgImage << "<image x=\"" << x << "\" y=\"" << y << "\" width=\"" << pngLoader.getWidth() << "\" height=\""
+               << pngLoader.getHeight() << "\" xlink:href=\"" << generatedImagePath << "\" />";
+      canvas.svgElements.push_back({"image", svgImage.str()});
+    }
 
     // Alternative: Embed LaTeX as raw SVG text (if text rendering is supported)
     std::stringstream svgText;
@@ -1145,7 +1143,6 @@ public:
 
     canvas.svgElements.push_back({"text", svgText.str()});
   }
-
   void Canvas::addSvgLine(float x1, float y1, float x2, float y2, const Pixel &color, float width,
                           const std::string &cssClass) {
     std::ostringstream ss;
