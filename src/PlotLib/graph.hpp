@@ -2,6 +2,7 @@
 #define GENERATE_IMAGE_GRAPH_HPP
 
 #include <freetype2/ft2build.h>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 #include FT_FREETYPE_H
@@ -58,9 +59,7 @@ namespace Plot {
 
   struct Viewport {
     float xMin, xMax, yMin, yMax;
-    [[nodiscard]] bool contains(const float x, const float y) const {
-      return x >= xMin && x <= xMax && y >= yMin && y <= yMax;
-    }
+    bool contains(float x, float y) const { return x >= xMin && x <= xMax && y >= yMin && y <= yMax; }
   };
 
   class Canvas {
@@ -74,7 +73,19 @@ public:
     Pixel &getPixelRef(int x, int y) { return pixels_[y * width_ + x]; } // Add this method
     void drawLineClipped(float x1, float y1, float x2, float y2, const Pixel &color, float thickness = 1.0f);
     bool clipLine(float &x1, float &y1, float &x2, float &y2) const;
-
+    struct SvgElement {
+      std::string type;
+      std::string data;
+    };
+    std::vector<SvgElement> svgElements; // Store vector drawing commands for SVG
+    void addSvgLine(float x1, float y1, float x2, float y2, const Pixel &color, float width,
+                    const std::string &cssClass = "");
+    void addSvgText(float x, float y, const std::string &text, const Pixel &color, float size) {
+      std::stringstream ss;
+      ss << "<text x=\"" << x << "\" y=\"" << y << "\" font-size=\"" << size << "\" fill=\"rgb(" << (int) color.r << ","
+         << (int) color.g << "," << (int) color.b << ")\">" << text << "</text>";
+      svgElements.push_back({"text", ss.str()});
+    }
     [[nodiscard]] int getWidth() const { return width_; }
     [[nodiscard]] int getHeight() const { return height_; }
     [[nodiscard]] const std::vector<Pixel> &getPixels() const { return pixels_; }
@@ -135,8 +146,8 @@ public:
     void setXRange(float min, float max);
     void setYRange(float min, float max);
     void setGridProperties(const GridProperties &props);
-    [[nodiscard]] int worldToPixelX(float x) const;
-    [[nodiscard]] int worldToPixelY(float y) const;
+    int worldToPixelX(float x) const;
+    int worldToPixelY(float y) const;
     void addLatexAnnotation(const std::string &latex, float x, float y, float scale = 1.0f,
                             const Pixel &color = Pixel(0, 0, 0, 255)) {
       LatexAnnotation annotation;
@@ -147,13 +158,15 @@ public:
       annotation.color = color;
       latexAnnotations.push_back(annotation);
     }
-    static std::u32string formatNumber(float value, const std::u32string &format = U"%.1f");
-    static void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size);
+    std::u32string formatNumber(float value, const std::u32string &format = U"%.1f") const;
+    void drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size) const;
     void addPlot(const std::vector<float> &x, const std::vector<float> &y, const PlotStyle &style = PlotStyle());
 
-    [[nodiscard]] Canvas render() const;
+    Canvas render(const std::string &fileName) const;
     void setAxisProperties(const AxisProperties &xProps, const AxisProperties &yProps);
     void drawAxes(Canvas &canvas) const;
+
+    void renderCanvas(const Canvas &canvas, const std::string &fileName) const;
 
     struct Padding {
       int left = 60; // Space for y-axis labels
@@ -168,13 +181,13 @@ private:
     void drawPlot(Canvas &canvas, const std::vector<float> &x, const std::vector<float> &y,
                   const PlotStyle &style) const;
     void validateData(const std::vector<float> &x, const std::vector<float> &y) const;
-    static bool isValidNumber(float n);
-    static void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size);
+    bool isValidNumber(float n) const;
+    void drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker, float size) const;
     struct LatexAnnotation {
       std::string latex;
-      float x{};
-      float y{};
-      float scale{};
+      float x;
+      float y;
+      float scale;
       Pixel color;
     };
 
@@ -188,12 +201,12 @@ private:
     std::vector<PlotStyle> plotStyles_;
     AxisProperties xAxisProps_;
     AxisProperties yAxisProps_;
-    Viewport viewport_{};
+    Viewport viewport_;
     Padding padding_;
-    [[nodiscard]] int getPlotWidth() const { return width_ - padding_.left - padding_.right; }
-    [[nodiscard]] int getPlotHeight() const { return height_ - padding_.top - padding_.bottom; }
-    [[nodiscard]] int getPlotX() const { return padding_.left; }
-    [[nodiscard]] int getPlotY() const { return padding_.top; }
+    int getPlotWidth() const { return width_ - padding_.left - padding_.right; }
+    int getPlotHeight() const { return height_ - padding_.top - padding_.bottom; }
+    int getPlotX() const { return padding_.left; }
+    int getPlotY() const { return padding_.top; }
   };
 
   class PngGenerator {

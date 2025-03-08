@@ -26,9 +26,8 @@
 #include <string_view>
 #include <unistd.h>
 #include <vector>
+#include "SvgGenerator.hpp"
 #include "ThreadPool.hpp"
-#include "graph.hpp"
-
 
 namespace Plot {
 
@@ -79,10 +78,11 @@ private:
     std::string cacheDir;
   };
 
+
   // Optimized PNG loading using RAII
   class PNGLoader {
 public:
-    explicit PNGLoader(const std::string &filePath) : fp(nullptr), png(nullptr), info(nullptr) {
+    PNGLoader(const std::string &filePath) : fp(nullptr), png(nullptr), info(nullptr) {
       fp = fopen(filePath.c_str(), "rb");
       if (!fp) {
         throw std::runtime_error("Failed to open PNG file: " + filePath);
@@ -108,8 +108,8 @@ public:
       png_init_io(png, fp);
       png_read_info(png, info);
 
-      width = static_cast<int>(png_get_image_width(png, info));
-      height = static_cast<int>(png_get_image_height(png, info));
+      width = png_get_image_width(png, info);
+      height = png_get_image_height(png, info);
       color_type = png_get_color_type(png, info);
       bit_depth = png_get_bit_depth(png, info);
 
@@ -117,7 +117,7 @@ public:
       png_read_update_info(png, info);
 
       row_size = png_get_rowbytes(png, info);
-      has_alpha = png_get_color_type(png, info) & PNG_COLOR_MASK_ALPHA || png_get_valid(png, info, PNG_INFO_tRNS);
+      has_alpha = (png_get_color_type(png, info) & PNG_COLOR_MASK_ALPHA) || png_get_valid(png, info, PNG_INFO_tRNS);
     }
 
     ~PNGLoader() {
@@ -129,8 +129,8 @@ public:
       }
     }
 
-    [[nodiscard]] std::vector<Pixel> readImageData(const Pixel &textColor) const {
-      std::vector row_pointers(height, std::vector<uint8_t>(row_size));
+    std::vector<Pixel> readImageData(const Pixel &textColor) {
+      std::vector<std::vector<uint8_t>> row_pointers(height, std::vector<uint8_t>(row_size));
       std::vector<png_bytep> row_ptrs;
       row_ptrs.reserve(height);
 
@@ -141,33 +141,32 @@ public:
       png_read_image(png, row_ptrs.data());
 
       std::vector<Pixel> blendedPixels(width * height);
-      constexpr float invScale = 1.0f / 255.0f;
+      const float invScale = 1.0f / 255.0f;
 
+// SIMD-friendly loop with minimal branches
 #pragma omp parallel for
       for (int y = 0; y < height; y++) {
         const uint8_t *row = row_pointers[y].data();
         for (int x = 0; x < width; x++) {
           const uint8_t *px = &(row[x * 4]);
           const uint8_t r = px[0], g = px[1], b = px[2], a = px[3];
-          const float alphaFactor = static_cast<float>(a) * invScale;
-          blendedPixels[y * width + x] = Pixel(static_cast<uint8_t>(static_cast<float>(textColor.r) *
-                                                                    (static_cast<float>(r) * invScale) * alphaFactor),
-                                               static_cast<uint8_t>(static_cast<float>(textColor.g) *
-                                                                    (static_cast<float>(g) * invScale) * alphaFactor),
-                                               static_cast<uint8_t>(static_cast<float>(textColor.b) *
-                                                                    (static_cast<float>(b) * invScale) * alphaFactor),
-                                               a);
+          const float alphaFactor = a * invScale;
+
+          // Pre-compute color blending
+          blendedPixels[y * width + x] = Pixel(static_cast<uint8_t>(textColor.r * (r * invScale) * alphaFactor),
+                                               static_cast<uint8_t>(textColor.g * (g * invScale) * alphaFactor),
+                                               static_cast<uint8_t>(textColor.b * (b * invScale) * alphaFactor), a);
         }
       }
 
       return blendedPixels;
     }
 
-    [[nodiscard]] int getWidth() const { return width; }
-    [[nodiscard]] int getHeight() const { return height; }
+    int getWidth() const { return width; }
+    int getHeight() const { return height; }
 
 private:
-    void configureTransforms() const {
+    void configureTransforms() {
       if (color_type == PNG_COLOR_TYPE_PALETTE)
         png_set_palette_to_rgb(png);
       if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
@@ -197,12 +196,12 @@ public:
     static std::string execute(const std::string_view command, const std::string_view workingDir = "") {
       namespace bp = boost::process;
 
+      bp::ipstream pipe_stream;
       std::string output;
-      auto cmd_string = std::string(command); // Convert to std::string
-      auto working_dir_string = std::string(workingDir); // Convert to std::string
+      std::string cmd_string = std::string(command); // Convert to std::string
+      std::string working_dir_string = std::string(workingDir); // Convert to std::string
 
       try {
-        bp::ipstream pipe_stream;
         bp::child c;
         if (workingDir.empty()) {
           c = bp::child(cmd_string, bp::std_out > pipe_stream, bp::std_err > bp::null);
@@ -286,17 +285,12 @@ public:
     yAxisProps_ = yProps;
   }
 
-  void Canvas::drawRect(const int x, const int y, const int width, const int height, const Pixel &color,
-                        const float thickness) {
-    for (int i = 0; static_cast<float>(i) < thickness; i++) {
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i),
-               static_cast<float>(y + i), color, 1.0f); // Top
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + i), static_cast<float>(x + i),
-               static_cast<float>(y + height - 1 - i), color, 1.0f); // Left
-      drawLine(static_cast<float>(x + i), static_cast<float>(y + height - 1 - i), static_cast<float>(x + width - 1 - i),
-               static_cast<float>(y + height - 1 - i), color, 1.0f); // Bottom
-      drawLine(static_cast<float>(x + width - 1 - i), static_cast<float>(y + i), static_cast<float>(x + width - 1 - i),
-               static_cast<float>(y + height - 1 - i), color, 1.0f); // Right
+  void Canvas::drawRect(int x, int y, int width, int height, const Pixel &color, float thickness) {
+    for (int i = 0; i < thickness; i++) {
+      drawLine(x + i, y + i, x + width - 1 - i, y + i, color, 1.0f); // Top
+      drawLine(x + i, y + i, x + i, y + height - 1 - i, color, 1.0f); // Left
+      drawLine(x + i, y + height - 1 - i, x + width - 1 - i, y + height - 1 - i, color, 1.0f); // Bottom
+      drawLine(x + width - 1 - i, y + i, x + width - 1 - i, y + height - 1 - i, color, 1.0f); // Right
     }
   }
 
@@ -305,72 +299,97 @@ public:
       return;
     }
 
-    const int plotX = getPlotX();
-    const int plotY = getPlotY();
-    const int plotWidth = getPlotWidth();
-    const int plotHeight = getPlotHeight();
+    int plotX = getPlotX();
+    int plotY = getPlotY();
+    int plotWidth = getPlotWidth();
+    int plotHeight = getPlotHeight();
 
     // --- X-Axis ---
     if (xAxisProps_.visible) {
-      canvas.drawLine(static_cast<float>(plotX), static_cast<float>(plotY + plotHeight),
-                      static_cast<float>(plotX + plotWidth), static_cast<float>(plotY + plotHeight), xAxisProps_.color,
+      canvas.drawLine(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight, xAxisProps_.color,
                       xAxisProps_.thickness);
 
-      for (float x = xRange_.first; x <= xRange_.second; x += xAxisProps_.tickSpacing) {
-        const int xPixel = worldToPixelX(x);
-
-        canvas.drawLine(static_cast<float>(xPixel), static_cast<float>(plotY + plotHeight), static_cast<float>(xPixel),
-                        static_cast<float>(plotY + plotHeight) + xAxisProps_.tickLength, xAxisProps_.color,
+      canvas.addSvgLine(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight, xAxisProps_.color,
                         xAxisProps_.thickness);
+
+      for (float x = xRange_.first; x <= xRange_.second; x += xAxisProps_.tickSpacing) {
+        int xPixel = worldToPixelX(x);
+
+        canvas.drawLine(xPixel, plotY + plotHeight, xPixel, plotY + plotHeight + xAxisProps_.tickLength,
+                        xAxisProps_.color, xAxisProps_.thickness);
+
+        canvas.addSvgLine(xPixel, plotY + plotHeight, xPixel, plotY + plotHeight + xAxisProps_.tickLength,
+                          xAxisProps_.color, xAxisProps_.thickness);
 
         if (xAxisProps_.showLabels) {
           std::u32string label = formatNumber(x, xAxisProps_.labelFormat);
-          auto [fst, snd] = TextRenderer::getTextSize(label);
-
-          const int textX = xPixel - fst / 2;
-          const int textY = plotY + plotHeight + xAxisProps_.tickLength + 35; // Move down by increasing this value
+          auto textSize = TextRenderer::getTextSize(label);
+          int textX = xPixel - textSize.first / 2;
+          int textY = plotY + plotHeight + xAxisProps_.tickLength + 35; // Adjust label position
 
           TextRenderer::renderText(canvas, label, textX, textY, xAxisProps_.color);
+
+          // Store labels as SVG text
+          canvas.addSvgText(textX, textY, std::string(label.begin(), label.end()), xAxisProps_.color, 20);
         }
       }
 
       if (!xAxisProps_.label.empty()) {
-        auto [fst, snd] = TextRenderer::getTextSize(xAxisProps_.label);
-        const int xLabelX = plotX + plotWidth / 2 - fst / 2;
-        const int xLabelY = plotY + plotHeight + xAxisProps_.tickLength + static_cast<float>(snd) + 65; // Extra margin
+        auto xLabelSize = TextRenderer::getTextSize(xAxisProps_.label);
+        int xLabelX = plotX + plotWidth / 2 - xLabelSize.first / 2;
+        int xLabelY = plotY + plotHeight + xAxisProps_.tickLength + xLabelSize.second + 65;
 
         TextRenderer::renderText(canvas, xAxisProps_.label, xLabelX, xLabelY, xAxisProps_.color);
+
+        // Store axis label in SVG
+        canvas.addSvgText(xLabelX, xLabelY, std::string(xAxisProps_.label.begin(), xAxisProps_.label.end()),
+                          xAxisProps_.color, 24);
       }
     }
-
 
     // --- Y-Axis ---
     if (yAxisProps_.visible) {
       canvas.drawLine(plotX, plotY, plotX, plotY + plotHeight, yAxisProps_.color, yAxisProps_.thickness);
 
+      canvas.addSvgLine(plotX, plotY, plotX, plotY + plotHeight, yAxisProps_.color, yAxisProps_.thickness);
 
       for (float y = yRange_.first; y <= yRange_.second; y += yAxisProps_.tickSpacing) {
         int yPixel = worldToPixelY(y);
+
         canvas.drawLine(plotX, yPixel, plotX - yAxisProps_.tickLength, yPixel, yAxisProps_.color,
                         yAxisProps_.thickness);
 
+        canvas.addSvgLine(plotX, yPixel, plotX - yAxisProps_.tickLength, yPixel, yAxisProps_.color,
+                          yAxisProps_.thickness);
+
         if (yAxisProps_.showLabels) {
-          std::u32string label = formatNumber(y, yAxisProps_.labelFormat); // Use formatNumber for y-axis too
+          std::u32string label = formatNumber(y, yAxisProps_.labelFormat);
           auto textSize = TextRenderer::getTextSize(label);
-          TextRenderer::renderText(canvas, label, plotX - yAxisProps_.tickLength - textSize.first - 25,
-                                   yPixel + textSize.second / 2, yAxisProps_.color);
+
+          int textX = plotX - yAxisProps_.tickLength - textSize.first - 25;
+          int textY = yPixel + textSize.second / 2;
+
+          TextRenderer::renderText(canvas, label, textX, textY, yAxisProps_.color);
+
+          // Store labels as SVG text
+          canvas.addSvgText(textX, textY, std::string(label.begin(), label.end()), yAxisProps_.color, 20);
         }
       }
-      // Draw the Y-axis label to the left and centered vertically
+
       if (!yAxisProps_.label.empty()) {
         auto yLabelSize = TextRenderer::getTextSize(yAxisProps_.label);
-        int yLabelX = plotX - yAxisProps_.tickLength - yLabelSize.second - 50; // Adjust for better spacing
+        int yLabelX = plotX - yAxisProps_.tickLength - yLabelSize.second - 50;
         int yLabelY = plotY + plotHeight / 2 + yLabelSize.first / 2;
 
         TextRenderer::renderText(canvas, yAxisProps_.label, yLabelX, yLabelY, yAxisProps_.color, 1.0f, 90);
+
+        // Store axis label in SVG
+        canvas.addSvgText(yLabelX, yLabelY, std::string(yAxisProps_.label.begin(), yAxisProps_.label.end()),
+                          yAxisProps_.color, 24);
       }
     }
   }
+
 
   inline std::u32string utf8_to_u32(const std::string &utf8_str) {
     std::u32string utf32_str;
@@ -383,7 +402,7 @@ public:
     return utf32_str;
   }
 
-  std::u32string Figure::formatNumber(float value, const std::u32string &format) {
+  std::u32string Figure::formatNumber(float value, const std::u32string &format) const {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2) << value; // Convert float to string
     return utf8_to_u32(ss.str()); // Convert to UTF-32
@@ -513,26 +532,38 @@ public:
     plotStyles_.push_back(style);
   }
 
-  Canvas Figure::render() const {
+  Canvas Figure::render(const std::string &fileName) const {
     Canvas canvas(width_, height_, Pixel::White);
     canvas.drawRect(0, 0, width_ - 1, height_ - 1, Pixel::Black, 1.0f);
+
     if (gridProps_.visible) {
       drawGrid(canvas);
     }
     drawAxes(canvas);
+
     for (size_t i = 0; i < plots_.size(); ++i) {
       const auto &[x, y] = plots_[i];
       drawPlot(canvas, x, y, plotStyles_[i]);
     }
-    const float xScale = static_cast<float>(width_ - padding_.left - padding_.right) / (xRange_.second - xRange_.first);
-    const float yScale =
-            static_cast<float>(height_ - padding_.top - padding_.bottom) / (yRange_.second - yRange_.first);
-    for (const auto &[latex, x, y, scale, color]: latexAnnotations) {
-      const int pixelX = padding_.left + static_cast<int>((x - xRange_.first) * xScale);
-      const int pixelY = canvas.getHeight() - padding_.bottom - static_cast<int>((y - yRange_.first) * yScale);
 
-      TextRenderer::renderLatex(canvas, latex, pixelX, pixelY, scale, color);
+    float xScale = (width_ - padding_.left - padding_.right) / (xRange_.second - xRange_.first);
+    float yScale = (height_ - padding_.top - padding_.bottom) / (yRange_.second - yRange_.first);
+
+    for (const auto &annotation: latexAnnotations) {
+      int pixelX = padding_.left + static_cast<int>((annotation.x - xRange_.first) * xScale);
+      int pixelY = canvas.getHeight() - padding_.bottom - static_cast<int>((annotation.y - yRange_.first) * yScale);
+      TextRenderer::renderLatex(canvas, annotation.latex, pixelX, pixelY, annotation.scale, annotation.color);
     }
+
+    // **Determine file format and save accordingly**
+    if (fileName.ends_with(".svg")) {
+      Plot::SvgGenerator::saveSVG(canvas, fileName, width_, height_);
+    } else if (fileName.ends_with(".png")) {
+      Plot::PngGenerator::savePNG(canvas, fileName);
+    } else {
+      throw std::runtime_error("Unsupported file format: " + fileName);
+    }
+
     return canvas;
   }
 
@@ -540,27 +571,33 @@ public:
     // Convert grid spacing from screen pixels to data units
     const int plotWidth = getPlotWidth();
     const int plotHeight = getPlotHeight();
-    const float xSpacing =
-            static_cast<float>(gridProps_.spacing) * (xRange_.second - xRange_.first) / static_cast<float>(plotWidth);
-    const float ySpacing =
-            static_cast<float>(gridProps_.spacing) * (yRange_.second - yRange_.first) / static_cast<float>(plotHeight);
+    const float xSpacing = gridProps_.spacing * (xRange_.second - xRange_.first) / plotWidth;
+    const float ySpacing = gridProps_.spacing * (yRange_.second - yRange_.first) / plotHeight;
 
     // Draw vertical grid lines
     for (float x = std::ceil(xRange_.first / xSpacing) * xSpacing; x <= xRange_.second; x += xSpacing) {
-      const float screenX = static_cast<float>(padding_.left) +
-                            (x - xRange_.first) / (xRange_.second - xRange_.first) * static_cast<float>(plotWidth);
-      canvas.drawLine(screenX, static_cast<float>(padding_.top), screenX,
-                      static_cast<float>(height_) - static_cast<float>(padding_.bottom), gridProps_.color,
+      float screenX = padding_.left + (x - xRange_.first) / (xRange_.second - xRange_.first) * plotWidth;
+
+      // Store in PNG canvas
+      canvas.drawLine(screenX, padding_.top, screenX, height_ - padding_.bottom, gridProps_.color,
                       gridProps_.lineThickness);
+
+      // Store in SVG canvas
+      canvas.addSvgLine(screenX, padding_.top, screenX, height_ - padding_.bottom, gridProps_.color,
+                        gridProps_.lineThickness);
     }
 
     // Draw horizontal grid lines
     for (float y = std::ceil(yRange_.first / ySpacing) * ySpacing; y <= yRange_.second; y += ySpacing) {
-      const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
-                            (y - yRange_.first) / (yRange_.second - yRange_.first) * static_cast<float>(plotHeight);
-      canvas.drawLine(static_cast<float>(padding_.left), screenY,
-                      static_cast<float>(width_) - static_cast<float>(padding_.right), screenY, gridProps_.color,
+      float screenY = padding_.top + plotHeight - (y - yRange_.first) / (yRange_.second - yRange_.first) * plotHeight;
+
+      // Store in PNG canvas
+      canvas.drawLine(padding_.left, screenY, width_ - padding_.right, screenY, gridProps_.color,
                       gridProps_.lineThickness);
+
+      // Store in SVG canvas
+      canvas.addSvgLine(padding_.left, screenY, width_ - padding_.right, screenY, gridProps_.color,
+                        gridProps_.lineThickness);
     }
   }
 
@@ -576,49 +613,80 @@ public:
     const int plotWidth = getPlotWidth();
     const int plotHeight = getPlotHeight();
 
+    std::stringstream svgPathData;
+    bool firstPoint = true;
+
+    // --- Line Plots ---
     if (style.plotType == PlotStyle::Type::Line || style.plotType == PlotStyle::Type::Both) {
       for (size_t i = 1; i < x.size(); ++i) {
         if (isValidNumber(x[i - 1]) && isValidNumber(x[i]) && isValidNumber(y[i - 1]) && isValidNumber(y[i])) {
+          float x1 = padding_.left + (x[i - 1] - xMin) / (xMax - xMin) * plotWidth;
+          float y1 = padding_.top + plotHeight - (y[i - 1] - yMin) / (yMax - yMin) * plotHeight;
+          float x2 = padding_.left + (x[i] - xMin) / (xMax - xMin) * plotWidth;
+          float y2 = padding_.top + plotHeight - (y[i] - yMin) / (yMax - yMin) * plotHeight;
 
-          const float x1 =
-                  static_cast<float>(padding_.left) + (x[i - 1] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
-          const float y1 = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
-                           (y[i - 1] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
-          const float x2 =
-                  static_cast<float>(padding_.left) + (x[i] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
-          const float y2 = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
-                           (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
-
+          // Store in PNG canvas
           canvas.drawLineClipped(x1, y1, x2, y2, style.color, style.lineWidth);
+
+          // Store in SVG path format
+          if (firstPoint) {
+            svgPathData << "M " << x1 << " " << y1;
+            firstPoint = false;
+          }
+          svgPathData << " L " << x2 << " " << y2;
         }
       }
-    }
 
-    if (style.plotType == PlotStyle::Type::Scatter || style.plotType == PlotStyle::Type::Both) {
-      for (size_t i = 0; i < x.size(); ++i) {
-        const float screenX =
-                static_cast<float>(padding_.left) + (x[i] - xMin) / (xMax - xMin) * static_cast<float>(plotWidth);
-        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(plotHeight) -
-                              (y[i] - yMin) / (yMax - yMin) * static_cast<float>(plotHeight);
-        drawPoint(canvas, screenX, screenY, style.color, style.pointSize);
+      // If path is non-empty, add it to SVG
+      if (!firstPoint) {
+        std::stringstream svgPath;
+        svgPath << "<path d=\"" << svgPathData.str() << "\" stroke=\"rgb(" << (int) style.color.r << ","
+                << (int) style.color.g << "," << (int) style.color.b << ")\" stroke-width=\"" << style.lineWidth
+                << "\" stroke-linecap=\"round\" stroke-linejoin=\"round\" fill=\"none\" />";
+        canvas.svgElements.push_back({"path", svgPath.str()});
       }
     }
+
+    // --- Scatter Plot ---
+    if (style.plotType == PlotStyle::Type::Scatter || style.plotType == PlotStyle::Type::Both) {
+      for (size_t i = 0; i < x.size(); ++i) {
+        float screenX = padding_.left + (x[i] - xMin) / (xMax - xMin) * plotWidth;
+        float screenY = padding_.top + plotHeight - (y[i] - yMin) / (yMax - yMin) * plotHeight;
+
+        // Store in PNG canvas
+        drawPoint(canvas, screenX, screenY, style.color, style.pointSize);
+
+        // Store in SVG as circle
+        std::stringstream svgCircle;
+        svgCircle << "<circle cx=\"" << screenX << "\" cy=\"" << screenY << "\" r=\"" << style.pointSize / 2
+                  << "\" fill=\"rgb(" << (int) style.color.r << "," << (int) style.color.g << "," << (int) style.color.b
+                  << ")\" stroke=\"black\" stroke-width=\"1\" />";
+        canvas.svgElements.push_back({"circle", svgCircle.str()});
+      }
+    }
+
+    // --- Markers ---
     if (style.marker != PlotStyle::Marker::None) {
       for (size_t i = 0; i < x.size(); ++i) {
-        const float x_min = xRange_.first == 0.0f ? *std::ranges::min_element(x) : xRange_.first;
-        const float x_max = xRange_.second == 0.0f ? *std::ranges::max_element(x) : xRange_.second;
-        const float y_min = yRange_.first == 0.0f ? *std::ranges::min_element(y) : yRange_.first;
-        const float y_max = yRange_.second == 0.0f ? *std::ranges::max_element(y) : yRange_.second;
-        const float screenX = static_cast<float>(padding_.left) +
-                              (x[i] - x_min) / (x_max - x_min) * static_cast<float>(getPlotWidth());
-        const float screenY = static_cast<float>(padding_.top) + static_cast<float>(getPlotHeight()) -
-                              (y[i] - y_min) / (y_max - y_min) * static_cast<float>(getPlotHeight());
+        float screenX = padding_.left + (x[i] - xMin) / (xMax - xMin) * getPlotWidth();
+        float screenY = padding_.top + getPlotHeight() - (y[i] - yMin) / (yMax - yMin) * getPlotHeight();
+
+        // Store in PNG canvas
         drawMarker(canvas, screenX, screenY, style.color, style.marker, style.markerSize);
+
+        // Store markers as SVG (example: small squares as an alternative marker)
+        std::stringstream svgMarker;
+        svgMarker << "<rect x=\"" << (screenX - style.markerSize / 2) << "\" y=\"" << (screenY - style.markerSize / 2)
+                  << "\" width=\"" << style.markerSize << "\" height=\"" << style.markerSize << "\" fill=\"rgb("
+                  << (int) style.color.r << "," << (int) style.color.g << "," << (int) style.color.b
+                  << ")\" stroke=\"black\" stroke-width=\"1\" />";
+        canvas.svgElements.push_back({"rect", svgMarker.str()});
       }
     }
   }
 
-  void Figure::drawPoint(Canvas &canvas, const float x, const float y, const Pixel &color, const float size) {
+
+  void Figure::drawPoint(Canvas &canvas, float x, float y, const Pixel &color, float size) const {
     const float radius = size / 2.0f;
     const int x0 = static_cast<int>(x);
     const int y0 = static_cast<int>(y);
@@ -667,7 +735,7 @@ public:
     const struct PngGuard {
       png_structp png;
       png_infop info;
-      PngGuard(const png_structp p, const png_infop i) : png(p), info(i) {}
+      PngGuard(png_structp p, png_infop i) : png(p), info(i) {}
       ~PngGuard() { png_destroy_write_struct(&png, &info); }
     } png_guard(png, png_create_info_struct(png));
 
@@ -736,7 +804,7 @@ public:
     }
 
     GlyphInfo glyph;
-    const FT_GlyphSlot slot = face_->glyph;
+    FT_GlyphSlot slot = face_->glyph;
     glyph.width = slot->bitmap.width;
     glyph.height = slot->bitmap.rows;
     glyph.bearingX = slot->bitmap_left;
@@ -755,26 +823,29 @@ public:
       throw std::runtime_error("FreeType not initialized");
     }
 
-    const auto angleRadians = static_cast<float>(angleDegrees * M_PI / 180.0f);
-    const float cosAngle = std::cos(angleRadians);
-    const float sinAngle = std::sin(angleRadians);
+    float angleRadians = angleDegrees * M_PI / 180.0f;
+    float cosAngle = std::cos(angleRadians);
+    float sinAngle = std::sin(angleRadians);
 
 
     int cursorX = x;
-
-    for (const char32_t c: text) {
-      auto &[bitmap, width, height, bearingX, bearingY, advance] = getCachedGlyph(c);
-
-      for (int row = 0; row < height; ++row) {
-        for (int col = 0; col < width; ++col) {
-          if (bitmap[row * width + col] > 0) {
+    const int width = canvas.getWidth();
+    const int height = canvas.getHeight();
 
 
-            const int glyphX = cursorX + static_cast<int>(bearingX * scale);
-            const int glyphY = y - static_cast<int>(bearingY * scale);
+    for (char32_t c: text) {
+      GlyphInfo &glyph = getCachedGlyph(c);
 
-            const float rotatedX = glyphX + col * scale;
-            const float rotatedY = glyphY + row * scale;
+      for (int row = 0; row < glyph.height; ++row) {
+        for (int col = 0; col < glyph.width; ++col) {
+          if (glyph.bitmap[row * glyph.width + col] > 0) {
+
+
+            int glyphX = cursorX + static_cast<int>(glyph.bearingX * scale);
+            int glyphY = y - static_cast<int>(glyph.bearingY * scale);
+
+            float rotatedX = glyphX + col * scale;
+            float rotatedY = glyphY + row * scale;
 
 
             int px = static_cast<int>(x + (rotatedX - x) * cosAngle - (rotatedY - y) * sinAngle);
@@ -784,7 +855,7 @@ public:
             if (px >= 0 && px < width && py >= 0 && py < height) {
 
 
-              const float alpha = bitmap[row * width + col] / 255.0f;
+              float alpha = glyph.bitmap[row * glyph.width + col] / 255.0f;
 
               Pixel &dst = canvas.getPixelRef(px, py);
 
@@ -793,19 +864,19 @@ public:
           }
         }
       }
-      cursorX += static_cast<int>(advance * scale);
+      cursorX += static_cast<int>(glyph.advance * scale);
     }
   }
 
-  int Figure::worldToPixelX(const float x) const {
+  int Figure::worldToPixelX(float x) const {
     return static_cast<int>(getPlotX() + (x - xRange_.first) / (xRange_.second - xRange_.first) * getPlotWidth());
   }
 
-  void Figure::drawMarker(Canvas &canvas, float x, float y, const Pixel &color, const PlotStyle::Marker marker,
-                          const float size) {
-    const int xCenter = static_cast<int>(x);
-    const int yCenter = static_cast<int>(y);
-    const int radius = static_cast<int>(size / 2.0f);
+  void Figure::drawMarker(Canvas &canvas, float x, float y, const Pixel &color, PlotStyle::Marker marker,
+                          float size) const {
+    int xCenter = static_cast<int>(x);
+    int yCenter = static_cast<int>(y);
+    int radius = static_cast<int>(size / 2.0f);
 
 
     switch (marker) {
@@ -880,7 +951,7 @@ public:
     }
   }
 
-  bool Figure::isValidNumber(float n) { return !std::isnan(n) && !std::isinf(n); }
+  bool Figure::isValidNumber(float n) const { return !std::isnan(n) && !std::isinf(n); }
 
   void Canvas::drawLineClipped(float x1, float y1, float x2, float y2, const Pixel &color, float thickness) {
     if (clipLine(x1, y1, x2, y2)) {
@@ -936,7 +1007,8 @@ public:
     // Handle second endpoint
     xend = std::round(x2);
     yend = y2 + gradient * (xend - x2);
-    const int xpxl2 = static_cast<int>(xend);
+    xgap = std::fmod(x2 + 0.5f, 1.0f);
+    int xpxl2 = static_cast<int>(xend);
     int ypxl2 = static_cast<int>(yend);
 
     // Main loop
@@ -966,26 +1038,64 @@ public:
       PNGLoader pngLoader(*cachedPath);
       auto pixels = pngLoader.readImageData(textColor);
       canvas.blendImage(pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y, 1.0f);
+
+      // Ensure the file path exists before adding to SVG
+      if (!cachedPath->empty()) {
+        std::stringstream svgImage;
+        svgImage << "<image x=\"" << x << "\" y=\"" << y << "\" width=\"" << pngLoader.getWidth() << "\" height=\""
+                 << pngLoader.getHeight() << "\" xlink:href=\"" << *cachedPath << "\" />";
+        canvas.svgElements.push_back({"image", svgImage.str()});
+      }
+
       return;
     }
 
     // Use thread pool to render LaTeX asynchronously
-    latexThreadPool.enqueue([&]() { // Capture cache & canvas by reference
+    latexThreadPool.enqueue([&]() {
       std::string generatedImagePath = generateLatexImage(latexCode, scale);
       cache.store(latexCode, scale, textColor, generatedImagePath);
 
       PNGLoader pngLoader(generatedImagePath);
       auto pixels = pngLoader.readImageData(textColor);
 
-      // Modify canvas in a separate function
       modifyCanvas(canvas, pixels, pngLoader.getWidth(), pngLoader.getHeight(), x, y);
+
+      // Ensure the generated file exists before adding it to SVG
+      if (!generatedImagePath.empty()) {
+        std::stringstream svgImage;
+        svgImage << "<image x=\"" << x << "\" y=\"" << y << "\" width=\"" << pngLoader.getWidth() << "\" height=\""
+                 << pngLoader.getHeight() << "\" xlink:href=\"" << generatedImagePath << "\" />";
+        canvas.svgElements.push_back({"image", svgImage.str()});
+      }
     });
+
+    // Alternative: Embed LaTeX as raw SVG text (if text rendering is supported)
+    std::stringstream svgText;
+    svgText << "<text x=\"" << x << "\" y=\"" << y << "\" font-size=\"" << scale * 20 << "\" fill=\"rgb("
+            << (int) textColor.r << "," << (int) textColor.g << "," << (int) textColor.b << ")\">" << latexCode
+            << "</text>";
+
+    canvas.svgElements.push_back({"text", svgText.str()});
   }
+
+  void Canvas::addSvgLine(float x1, float y1, float x2, float y2, const Pixel &color, float width,
+                          const std::string &cssClass) {
+    std::ostringstream ss;
+    ss << "<line x1=\"" << x1 << "\" y1=\"" << y1 << "\" x2=\"" << x2 << "\" y2=\"" << y2 << "\" stroke=\"rgb("
+       << (int) color.r << "," << (int) color.g << "," << (int) color.b << ")\" stroke-width=\"" << width << "\"";
+    if (!cssClass.empty()) {
+      ss << " class=\"" << cssClass << "\"";
+    }
+    ss << " />";
+    svgElements.push_back({"line", ss.str()});
+  }
+
 
   void TextRenderer::modifyCanvas(Canvas &canvas, const std::vector<Pixel> &pixels, int width, int height, int x,
                                   int y) {
     canvas.blendImage(pixels, width, height, x, y, 1.0f);
   }
+
 
   void LaTeXCache::cleanupCache(size_t maxCacheSize) {
     std::vector<std::pair<std::string, std::time_t>> files;
@@ -1044,6 +1154,7 @@ public:
     return pngPath; // Return the path of the generated PNG
   }
 
+
   void Canvas::blendImage(const std::vector<Pixel> &image, int imgWidth, int imgHeight, int x, int y, float alpha) {
     // Early return if completely transparent or outside canvas
     if (alpha <= 0.0f || x >= width_ || y >= height_ || x + imgWidth <= 0 || y + imgHeight <= 0) {
@@ -1051,7 +1162,7 @@ public:
     }
 
     // Pre-compute constants
-    constexpr float invAlpha = 1.0f / 255.0f;
+    const float invAlpha = 1.0f / 255.0f;
 
     // Calculate clipping boundaries to avoid bounds checking in inner loop
     const int startY = std::max(0, y);

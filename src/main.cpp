@@ -75,9 +75,7 @@ int main() {
     fig.addPlot(x, y, style);
 
     // White background is already default
-    const auto canvas = fig.render();
-    Plot::PngGenerator::savePNG(canvas, "plot.png");
-
+    const auto canvas = fig.render("plot.png");
 
     auto end = std::chrono::high_resolution_clock::now(); // End timing
     std::chrono::duration<double> duration = end - start;
@@ -142,8 +140,7 @@ int main() {
     fig.addPlot(x, y, style);
 
     // White background is already default
-    const auto canvas = fig.render();
-    Plot::PngGenerator::savePNG(canvas, "plot2.png");
+    const auto canvas = fig.render("plot2.png");
 
     auto end = std::chrono::high_resolution_clock::now(); // End timing
     std::chrono::duration<double> duration = end - start;
@@ -206,8 +203,7 @@ int main() {
     // Add LaTeX formula at the top of the plot
     fig.addLatexAnnotation("f(x) = e^{-x^2}", 0.0f, 1.1f, 1.2f, Plot::Pixel(0, 0, 0, 255));
 
-    const auto canvas = fig.render();
-    Plot::PngGenerator::savePNG(canvas, "gaussian_plot.png");
+    const auto canvas = fig.render("gaussian_plot.png");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
@@ -270,8 +266,7 @@ int main() {
     // Add LaTeX formula at the top of the plot
     fig.addLatexAnnotation("f(x) = e^{-x^2}", 0.0f, 1.1f, 1.2f, Plot::Pixel(0, 0, 0, 255));
 
-    const auto canvas = fig.render();
-    Plot::PngGenerator::savePNG(canvas, "gaussian_plot.png");
+    const auto canvas = fig.render("gaussian_plot.png");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
@@ -344,8 +339,8 @@ int main() {
 
     figure.addLatexAnnotation("y = \\sin(x) \\cdot e^{-|x|/5}", 2.25f, 0.6f, 1.5f);
 
-    Plot::Canvas canvas = figure.render();
-    Plot::PngGenerator::savePNG(canvas, "damped_oscillations.png");
+    Plot::Canvas canvas = figure.render("damped_oscillations.png");
+    figure.render("damped_oscillations.svg");
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
