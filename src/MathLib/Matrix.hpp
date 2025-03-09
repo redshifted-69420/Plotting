@@ -8,6 +8,7 @@ class Matrix {
   public:
   // Constructors
   Matrix(); // Default constructor
+  Matrix(std::initializer_list<std::initializer_list<float>> init);
   Matrix(size_t rows, size_t cols); // Create a zero-initialized matrix
   Matrix(size_t rows, size_t cols,
          const std::vector<float> &data); // Create from vector
@@ -26,10 +27,16 @@ class Matrix {
     bool usedMetal = false;
     return adaptiveMatrixAdd(*this, other, usedMetal);
   }
+  Matrix operator-(const Matrix &other) const {
+    bool usedMetal = false;
+    return adaptiveMatrixSub(*this, other, usedMetal);
+  }
 
+  // [{Matrix Methods}]
+  [[nodiscard]] float det() const;
 
   // Basic operations
-  Matrix transpose() const { return transposeMetal(); };
+  Matrix transpose() const { return optimisedTrasnpose(); };
   static Matrix random(size_t rows, size_t cols, float min = -10.0f, float max = 10.0f);
 
   // Accessors
@@ -50,6 +57,7 @@ class Matrix {
 
   // Output
   std::string toString() const;
+  void print() const;
 
   private:
   size_t m_rows;
@@ -59,12 +67,22 @@ class Matrix {
   private:
   Matrix multiplyAdaptive(const Matrix &other) const; // Adaptive variant
   Matrix multiplyBLAS(const Matrix &other) const; // BLAS variant
-  Matrix multiplyMetal(const Matrix &A, const Matrix &B) const;
+  Matrix multiplyMetal(const Matrix &A, const Matrix &B) const; // Metal variant
   Matrix multiply(const Matrix &other) const; // General multiplication
-  Matrix matrixAddMetal(const Matrix &A, const Matrix &B) const;
-  Matrix matrixAddAccelerate(const Matrix &A, const Matrix &B) const;
-  Matrix adaptiveMatrixAdd(const Matrix &A, const Matrix &B, bool &usedMetal) const;
+  //// add method
+  Matrix matrixAddMetal(const Matrix &A, const Matrix &B) const; ////
+  Matrix matrixAddAccelerate(const Matrix &A, const Matrix &B) const; ////
+  Matrix adaptiveMatrixAdd(const Matrix &A, const Matrix &B, bool &usedMetal) const; ////
+
+  /// sun method
+  Matrix matrixSubMetal(const Matrix &A, const Matrix &B) const;
+  Matrix matrixSubAccelerate(const Matrix &A, const Matrix &B) const; ////
+  Matrix adaptiveMatrixSub(const Matrix &A, const Matrix &B, bool &usedMetal) const; ////
+
+  /// [other method]
   Matrix transposeMetal() const;
+  Matrix optimisedTrasnpose() const;
+  Matrix transposeNAIVE() const;
 };
 
 #endif // MATRIX_H

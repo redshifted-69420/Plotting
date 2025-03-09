@@ -1,4 +1,5 @@
 #include "Matrix.hpp"
+#include "MetalUtils.h"
 #include <Accelerate/Accelerate.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -18,27 +19,6 @@
 // Reusable Metal device and command queue to avoid recreation overhead
 static id<MTLDevice> metalDevice = nil;
 static id<MTLCommandQueue> metalCommandQueue = nil;
-static id<MTLLibrary> metalLibrary = nil;
-
-// Initialize Metal resources once
-void initializeMetal() {
-  if (metalDevice == nil) {
-    metalDevice = MTLCreateSystemDefaultDevice();
-    if (!metalDevice) {
-      std::cerr << "Error: Metal is not supported on this device!" << std::endl;
-      return;
-    }
-    metalCommandQueue = [metalDevice newCommandQueue];
-
-    // Load the Metal library
-    NSError *error = nil;
-    metalLibrary = [metalDevice newDefaultLibrary];
-    if (!metalLibrary) {
-      std::cerr << "Error: Failed to load Metal library!" << std::endl;
-      return;
-    }
-  }
-}
 
 void matrixMultiplyBLAS(const float *A, const float *B, float *C, int M, int N,
                         int K) {
@@ -160,6 +140,20 @@ Matrix::Matrix(Matrix &&other) noexcept
       m_data(std::move(other.m_data)) {
   other.m_rows = 0;
   other.m_cols = 0;
+}
+
+Matrix::Matrix(std::initializer_list<std::initializer_list<float>> init) {
+  m_rows = init.size();
+  m_cols = (m_rows > 0) ? init.begin()->size() : 0;
+
+  m_data.reserve(m_rows * m_cols);
+  for (const auto &row : init) {
+    if (row.size() != m_cols) {
+      throw std::invalid_argument(
+          "All rows must have the same number of columns");
+    }
+    m_data.insert(m_data.end(), row.begin(), row.end());
+  }
 }
 
 Matrix::~Matrix() {}
@@ -312,16 +306,25 @@ Matrix Matrix::multiplyAdaptive(const Matrix &other) const {
   return result;
 }
 
+/// Optimised Trasnpose
+Matrix Matrix::optimisedTrasnpose() const {
+  if (m_rows >= 4096 || m_cols >= 4096) {
+    return transposeMetal();
+  } else {
+    return transposeNAIVE();
+  }
+}
+
 // Transpose
-// Matrix Matrix::transpose() const {
-//   Matrix result(m_cols, m_rows);
-//   for (size_t i = 0; i < m_rows; ++i) {
-//     for (size_t j = 0; j < m_cols; ++j) {
-//       result.at(j, i) = at(i, j);
-//     }
-//   }
-//   return result;
-// }
+Matrix Matrix::transposeNAIVE() const {
+  Matrix result(m_cols, m_rows);
+  for (size_t i = 0; i < m_rows; ++i) {
+    for (size_t j = 0; j < m_cols; ++j) {
+      result.at(j, i) = at(i, j);
+    }
+  }
+  return result;
+}
 
 Matrix Matrix::transposeMetal() const {
   // Initialize Metal once if needed
@@ -440,6 +443,27 @@ const float &Matrix::at(size_t row, size_t col) const {
   return m_data[row * m_cols + col];
 }
 
+float Matrix::det() const {
+  if (m_rows != m_cols) {
+    throw std::invalid_argument(
+        "Determinant calculation is only implemented for square matrices");
+  }
+  Matrix U(*this);
+  float det = 1.0f;
+  for (size_t i = 0; i < m_rows; ++i) {
+    if (U.at(i, i) == 0.0f)
+      return 0.0f;
+    for (size_t j = i + 1; j < m_rows; ++j) {
+      float factor = U.at(j, i) / U.at(i, i);
+      for (size_t k = i; k < m_cols; ++k) {
+        U.at(j, k) -= factor * U.at(i, k);
+      }
+    }
+    det *= U.at(i, i);
+  }
+  return det;
+}
+
 // Get raw data pointer
 float *Matrix::data() { return m_data.data(); }
 
@@ -556,6 +580,58 @@ std::string Matrix::toString() const {
   return ss.str();
 }
 
+void Matrix::print() const {
+  std::stringstream ss;
+
+  // For large matrices, only show a preview
+  const size_t maxPreviewSize = 10;
+  const bool showPreview = m_rows > maxPreviewSize || m_cols > maxPreviewSize;
+
+  ss << m_rows << "x" << m_cols << " Matrix" << std::endl;
+
+  if (m_rows == 0 || m_cols == 0) {
+    ss << "[Empty]";
+    std::cout << ss.str();
+    return;
+  }
+
+  size_t rowsToShow = showPreview ? std::min(maxPreviewSize, m_rows) : m_rows;
+  size_t colsToShow = showPreview ? std::min(maxPreviewSize, m_cols) : m_cols;
+
+  // Compute maximum width for alignment
+  size_t maxWidth = 0;
+  for (size_t i = 0; i < rowsToShow; ++i) {
+    for (size_t j = 0; j < colsToShow; ++j) {
+      std::ostringstream oss;
+      oss << std::fixed << std::setprecision(4) << at(i, j);
+      maxWidth = std::max(maxWidth, oss.str().length());
+    }
+  }
+
+  for (size_t i = 0; i < rowsToShow; ++i) {
+    ss << "[";
+    for (size_t j = 0; j < colsToShow; ++j) {
+      ss << "\033[32m" << std::fixed << std::setprecision(4)
+         << std::setw(maxWidth) << at(i, j) << "\033[0m";
+      if (j < colsToShow - 1) {
+        ss << ", ";
+      }
+    }
+
+    if (colsToShow < m_cols) {
+      ss << ", ...";
+    }
+
+    ss << "]" << std::endl;
+  }
+
+  if (rowsToShow < m_rows) {
+    ss << "...";
+  }
+
+  std::cout << ss.str();
+}
+
 Matrix Matrix::matrixAddAccelerate(const Matrix &A, const Matrix &B) const {
   if (A.rows() != B.rows() || A.cols() != B.cols()) {
     throw std::invalid_argument("Matrix dimensions mismatch for addition");
@@ -569,7 +645,101 @@ Matrix Matrix::matrixAddAccelerate(const Matrix &A, const Matrix &B) const {
   return result;
 }
 
+Matrix Matrix::matrixSubAccelerate(const Matrix &A, const Matrix &B) const {
+  if (A.rows() != B.rows() || A.cols() != B.cols()) {
+    throw std::invalid_argument("Matrix dimensions mismatch for addition");
+  }
+
+  Matrix result(A.rows(), A.cols());
+
+  vDSP_vsub(A.data(), 1, B.data(), 1, result.data(), 1,
+            static_cast<vDSP_Length>(A.size()));
+
+  return result;
+}
+
 Matrix Matrix::matrixAddMetal(const Matrix &A, const Matrix &B) const {
+  if (A.rows() != B.rows() || A.cols() != B.cols()) {
+    throw std::invalid_argument("Matrix dimensions mismatch for addition");
+  }
+
+  if (metalDevice == nil) {
+    initializeMetal();
+    if (metalDevice == nil) {
+      throw std::runtime_error("Metal is not supported on this device!");
+    }
+  }
+
+  Matrix result(A.rows(), A.cols());
+  uint size = static_cast<uint>(A.size());
+
+  @autoreleasepool {
+    MTLResourceOptions options =
+        MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache;
+
+    id<MTLBuffer> bufferA = [metalDevice newBufferWithBytes:A.data()
+                                                     length:size * sizeof(float)
+                                                    options:options];
+    id<MTLBuffer> bufferB = [metalDevice newBufferWithBytes:B.data()
+                                                     length:size * sizeof(float)
+                                                    options:options];
+    id<MTLBuffer> bufferC =
+        [metalDevice newBufferWithLength:size * sizeof(float) options:options];
+
+    id<MTLBuffer> sizeBuffer = [metalDevice newBufferWithBytes:&size
+                                                        length:sizeof(uint)
+                                                       options:options];
+
+    id<MTLFunction> addFunction =
+        [metalLibrary newFunctionWithName:@"sub_arrays"];
+    if (!addFunction) {
+      throw std::runtime_error("Failed to load Metal function 'sub_arrays'");
+    }
+
+    NSError *error = nil;
+    id<MTLComputePipelineState> pipelineState =
+        [metalDevice newComputePipelineStateWithFunction:addFunction
+                                                   error:&error];
+    if (!pipelineState) {
+      throw std::runtime_error(
+          "Failed to create Metal pipeline state: " +
+          std::string([[error localizedDescription] UTF8String]));
+    }
+
+    id<MTLCommandBuffer> commandBuffer = [metalCommandQueue commandBuffer];
+    id<MTLComputeCommandEncoder> computeEncoder =
+        [commandBuffer computeCommandEncoder];
+
+    [computeEncoder setComputePipelineState:pipelineState];
+    [computeEncoder setBuffer:bufferA offset:0 atIndex:0];
+    [computeEncoder setBuffer:bufferB offset:0 atIndex:1];
+    [computeEncoder setBuffer:bufferC offset:0 atIndex:2];
+    [computeEncoder setBuffer:sizeBuffer offset:0 atIndex:3];
+
+    NSUInteger maxThreadsPerGroup = pipelineState.maxTotalThreadsPerThreadgroup;
+    NSUInteger threadGroupSize = MIN(256, maxThreadsPerGroup);
+
+    NSUInteger totalThreads = (size + 3) / 4;
+    NSUInteger numThreadGroups =
+        (totalThreads + threadGroupSize - 1) / threadGroupSize;
+
+    MTLSize threadgroups = MTLSizeMake(numThreadGroups, 1, 1);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(threadGroupSize, 1, 1);
+
+    [computeEncoder dispatchThreadgroups:threadgroups
+                   threadsPerThreadgroup:threadsPerThreadgroup];
+
+    [computeEncoder endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+
+    memcpy(result.data(), [bufferC contents], size * sizeof(float));
+  }
+
+  return result;
+}
+
+Matrix Matrix::matrixSubMetal(const Matrix &A, const Matrix &B) const {
   if (A.rows() != B.rows() || A.cols() != B.cols()) {
     throw std::invalid_argument("Matrix dimensions mismatch for addition");
   }
@@ -675,14 +845,55 @@ Matrix Matrix::adaptiveMatrixAdd(const Matrix &A, const Matrix &B,
   if (metalSupported && A.size() >= METAL_THRESHOLD) {
     try {
       usedMetal = true;
+      std::cout << "Using matrixAddMetal\n";
       return matrixAddMetal(A, B);
     } catch (const std::exception &e) {
       METAL_THRESHOLD *= 2;
       usedMetal = false;
+      std::cout << "Using matrixAddAccelerate\n";
       return matrixAddAccelerate(A, B);
     }
   } else {
     usedMetal = false;
     return matrixAddAccelerate(A, B);
+  }
+}
+
+Matrix Matrix::adaptiveMatrixSub(const Matrix &A, const Matrix &B,
+                                 bool &usedMetal) const {
+  if (A.rows() != B.rows() || A.cols() != B.cols()) {
+    throw std::invalid_argument("Matrix dimensions mismatch for addition");
+  }
+
+  static size_t METAL_THRESHOLD = 10000;
+  static bool metalInitialized = false;
+  static bool metalSupported = true;
+
+  if (!metalInitialized) {
+    if (metalDevice == nil) {
+      try {
+        initializeMetal();
+        metalSupported = (metalDevice != nil);
+      } catch (...) {
+        metalSupported = false;
+      }
+    }
+    metalInitialized = true;
+  }
+
+  if (metalSupported && A.size() >= METAL_THRESHOLD) {
+    try {
+      usedMetal = true;
+      std::cout << "Using matrixAddMetal\n";
+      return matrixSubMetal(A, B);
+    } catch (const std::exception &e) {
+      METAL_THRESHOLD *= 2;
+      usedMetal = false;
+      std::cout << "Using matrixAddAccelerate\n";
+      return matrixSubAccelerate(A, B);
+    }
+  } else {
+    usedMetal = false;
+    return matrixSubAccelerate(A, B);
   }
 }

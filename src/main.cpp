@@ -2,8 +2,10 @@
 #include <iostream>
 #include <vector>
 #include "MathLib/Matrix.hpp"
+#include "MathLib/Tensor.hpp"
 #include "MathLib/mathlib.hpp"
 #include "PlotLib/graph.hpp"
+
 
 int main() {
   try {
@@ -15,14 +17,14 @@ int main() {
 
     // Set custom padding
     Plot::Figure::Padding padding;
-    padding.left = 120; // More space for y-axis labels
-    padding.right = 120; // Some space on right
-    padding.top = 120; // Space for title if needed
-    padding.bottom = 120; // Space for x-axis labels
+    padding.left = 80; // More space for y-axis labels
+    padding.right = 40; // Some space on right
+    padding.top = 40; // Space for title if needed
+    padding.bottom = 60; // Space for x-axis labels
     fig.setPadding(padding);
 
     fig.setXRange(-20.0f, 20.0f);
-    fig.setYRange(-1.0f, 1.0f);
+    fig.setYRange(-1.5f, 1.5f);
 
     // Configure X axis with improved aesthetics
     Plot::AxisProperties xAxis;
@@ -57,6 +59,8 @@ int main() {
 
     // White background is already default
     const auto canvas = fig.render("plot.png");
+    fig.render("plot.svg");
+
 
     auto end = std::chrono::high_resolution_clock::now(); // End timing
     std::chrono::duration<double> duration = end - start;
@@ -140,7 +144,7 @@ int main() {
     const std::vector<float> x = Math::linspace(-2.0f, 2.0f, 1000);
     std::vector<float> y = Math::Exp((-1.0f * x * x));
 
-    Plot::Figure fig(3127, 2021);
+    Plot::Figure fig(3000, 2000);
 
     // Set custom padding
     Plot::Figure::Padding padding;
@@ -184,68 +188,9 @@ int main() {
     // Add LaTeX formula at the top of the plot
     fig.addLatexAnnotation("f(x) = e^{-x^2}", 0.0f, 1.1f, 1.2f, Plot::Pixel(0, 0, 0, 255));
 
-    const auto canvas = fig.render("gaussian_plot.png");
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
-
-    std::cout << "Plot saved as gaussian_plot.png" << std::endl;
-    std::cout << "Execution time: " << duration.count() << " seconds" << std::endl;
-
-  } catch (const std::exception &e) {
-    std::cerr << "Error: " << e.what() << std::endl;
-    return 1;
-  }
-
-  try {
-    auto start = std::chrono::high_resolution_clock::now(); // Start timing
-
-    const std::vector<float> x = Math::linspace(-2.0f, 2.0f, 1000);
-    std::vector<float> y = Math::Exp((-1.0f * x * x));
-
-    Plot::Figure fig(3127, 2021);
-
-    // Set custom padding
-    Plot::Figure::Padding padding;
-    padding.left = 200; // More space for y-axis labels
-    padding.right = 200; // Some space on right
-    padding.top = 200; // Space for title and equations
-    padding.bottom = 200; // Space for x-axis labels
-    fig.setPadding(padding);
-
-    fig.setXRange(-2.5f, 2.5f);
-    fig.setYRange(-0.2f, 1.2f);
-
-    // Configure axes, grid, etc. as in your other examples
-    Plot::AxisProperties xAxis;
-    xAxis.visible = true;
-    xAxis.color = Plot::Pixel{40, 40, 40, 255};
-    xAxis.thickness = 1.5f;
-    xAxis.showTicks = true;
-    xAxis.tickSpacing = 0.5f;
-    xAxis.tickLength = 8.0f;
-    xAxis.label = U"x";
-
-    Plot::AxisProperties yAxis = xAxis;
-    yAxis.tickSpacing = 0.2f;
-    yAxis.label = U"f(x)";
-
-    fig.setAxisProperties(xAxis, yAxis);
-
-    Plot::GridProperties grid;
-    grid.visible = true;
-    grid.color = Plot::Pixel{230, 230, 230, 255};
-    grid.spacing = 350;
-    grid.lineThickness = 2.5f;
-    fig.setGridProperties(grid);
-
-    Plot::PlotStyle style;
-    style.color = Plot::Pixel{41, 128, 185, 255};
-    style.lineWidth = 8.0f;
-    fig.addPlot(x, y, style);
-
-    // Add LaTeX formula at the top of the plot
-    fig.addLatexAnnotation("f(x) = e^{-x^2}", 0.0f, 1.1f, 1.2f, Plot::Pixel(0, 0, 0, 255));
+    // Add another LaTeX formula explaining the properties
+    fig.addLatexAnnotation("\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}", -2.0f, -0.1f, 1.0f,
+                           Plot::Pixel(180, 0, 0, 255));
 
     const auto canvas = fig.render("gaussian_plot.png");
 
@@ -262,7 +207,7 @@ int main() {
 
   try {
     auto start = std::chrono::high_resolution_clock::now(); // Start timing
-
+    // Generate some interesting data
     const std::vector<float> x = Math::linspace(-10.0f, 10.0f, 1000);
     const std::vector<float> y1 = Math::Sin(x) * Math::Exp(-1.0f * Math::Abs(x) / 5.0f);
     const std::vector<float> y2 = Math::Cos(x) * 0.5f * Math::Exp(-1.0f * Math::Abs(x) / 7.0f);
@@ -321,14 +266,10 @@ int main() {
     figure.addLatexAnnotation("y = \\sin(x) \\cdot e^{-|x|/5}", 2.25f, 0.6f, 1.5f);
 
     Plot::Canvas canvas = figure.render("damped_oscillations.png");
-    Plot::Canvas canvas2 = figure.render("damped_oscillations.svg");
-
-    auto end = std::chrono::high_resolution_clock::now();
+    figure.render("damped_oscillations.svg");
+    auto end = std::chrono::high_resolution_clock::now(); // End timing
     std::chrono::duration<double> duration = end - start;
-
-    std::cout << "Plot saved as damped_oscillations.png" << std::endl;
     std::cout << "Execution time: " << duration.count() << " seconds" << std::endl;
-
   } catch (const std::exception &e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;
     return 1;
@@ -337,32 +278,88 @@ int main() {
     return 1;
   }
 
-  Matrix A = Matrix::random(8192, 8192);
-  Matrix B = Matrix::random(8192, 8192);
-  Matrix C = Matrix::random(8192, 8192);
+  Matrix M1(3, 3, {1, 2, 8, 4, 5, 9, 7, 8, 9});
+  Matrix M2(3, 3, {6, 2, 3, 4, 5, 6, 7, 8, 9});
+  Matrix M3 = M1 + M2;
+  Matrix M4 = M1 - M2;
+  Matrix M5 = M1 * M2;
+  M3.print();
+  M4.print();
+  M5.print();
 
-  // Measure time for Adaptive multiplication
-  auto start = std::chrono::high_resolution_clock::now();
-  Matrix C_adaptive = A * B;
-  auto end = std::chrono::high_resolution_clock::now();
-  auto duration_adaptive = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Adaptive Execution Time: " << duration_adaptive.count() << " ms" << std::endl;
+  Matrix M = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {7.0f, 8.0f, 9.0f}};
+  Matrix M_ = M * M;
+  M_.print();
+  std::cout << "The deteraminant is: " << M_.det() << '\n';
 
-  // Measure time for Trasnpose
-  start = std::chrono::high_resolution_clock::now();
-  Matrix T = C.transpose();
-  end = std::chrono::high_resolution_clock::now();
-  auto duration_inverse = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Trasnpose Time: " << duration_inverse.count() << " ms" << std::endl;
+  // Example 2: Tensor Addition
+  {
+    std::cout << "\n===== Example 2: Tensor Addition =====" << std::endl;
 
-  std::cout << T.toString();
+    // Create two tensors
+    Tensor T1({2, 2}, {1, 2, 3, 4});
+    Tensor T2({2, 2}, {5, 6, 7, 8});
 
-  start = std::chrono::high_resolution_clock::now();
-  Matrix D = A + B;
-  end = std::chrono::high_resolution_clock::now();
-  auto duration_add = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Add Duration: " << duration_add.count() << " ms" << std::endl;
-  std::cout << D.toString();
+    // Perform tensor addition
+    Tensor T3 = T1.add(T2);
+
+    // Print the tensors
+    std::cout << "Tensor T1:\n" << T1.toString() << std::endl;
+    std::cout << "Tensor T2:\n" << T2.toString() << std::endl;
+    std::cout << "Tensor T3 (T1 + T2):\n" << T3.toString() << std::endl;
+  }
+
+  // Example 3: Tensor Scaling
+  {
+    std::cout << "\n===== Example 3: Tensor Scaling =====" << std::endl;
+
+    // Create a tensor
+    Tensor T({2, 2}, {1, 2, 3, 4});
+
+    // Scale the tensor by a scalar
+    float scalar = 2.5f;
+    Tensor T_scaled = T.scale(scalar);
+
+    // Print the tensors
+    std::cout << "Tensor T:\n" << T.toString() << std::endl;
+    std::cout << "Tensor T_scaled (T * " << scalar << "):\n" << T_scaled.toString() << std::endl;
+  }
+
+
+  // Example 5: Tensor Dot Product (Placeholder)
+  {
+    std::cout << "\n===== Example 5: Tensor Dot Product =====" << std::endl;
+
+    // Create two tensors
+    Tensor T1({2, 3}, {1, 2, 3, 4, 5, 6});
+    Tensor T2({3, 2}, {7, 8, 9, 10, 11, 12});
+
+    // Perform dot product (placeholder)
+    try {
+      Tensor T3 = T1.dot(T2);
+      std::cout << "Tensor T1:\n" << T1.toString() << std::endl;
+      std::cout << "Tensor T2:\n" << T2.toString() << std::endl;
+      std::cout << "Tensor T3 (T1 . T2):\n" << T3.toString() << std::endl;
+    } catch (const std::runtime_error &e) {
+      std::cerr << "Error: " << e.what() << std::endl;
+    }
+  }
+
+  // Example 6: Tensor Transpose
+  {
+    std::cout << "\n===== Example 6: Tensor Transpose =====" << std::endl;
+
+    // Create a tensor
+    Tensor T({2, 3}, {1, 2, 3, 4, 5, 6});
+
+    // Transpose the tensor
+    Tensor T_transposed = T.transpose({1, 0});
+
+    // Print the tensors
+    std::cout << "Tensor T:\n" << T.toString() << std::endl;
+    std::cout << "Tensor T_transposed:\n" << T_transposed.toString() << std::endl;
+  }
+
 
   return 0;
 }

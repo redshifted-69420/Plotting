@@ -62,6 +62,8 @@ add_executable(Plot
     src/MathLib/mathlib.cpp
     src/PlotLib/graph.cpp
     src/MathLib/Matrix.mm
+    src/MathLib/Tensor.mm
+    src/MathLib/MetalUtils.mm
 )
 
 # Include directories
@@ -119,6 +121,8 @@ if(APPLE)
         "${CMAKE_SOURCE_DIR}/src/MathLib/matrix_add.metal"
         "${CMAKE_SOURCE_DIR}/src/MathLib/matrix_mul.metal"
         "${CMAKE_SOURCE_DIR}/src/MathLib/matrix_transpose.metal"
+        "${CMAKE_SOURCE_DIR}/src/MathLib/tensor_add.metal"
+        "${CMAKE_SOURCE_DIR}/src/MathLib/matrix_sub.metal"
     )
 
     # Output files for the Metal shader compilation

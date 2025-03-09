@@ -1143,6 +1143,7 @@ public:
 
     canvas.svgElements.push_back({"text", svgText.str()});
   }
+
   void Canvas::addSvgLine(float x1, float y1, float x2, float y2, const Pixel &color, float width,
                           const std::string &cssClass) {
     std::ostringstream ss;
