@@ -39,7 +39,7 @@ void initializeMetal() {
     }
   }
 }
-// Accelerate BLAS matrix multiplication
+
 void matrixMultiplyBLAS(const float *A, const float *B, float *C, int M, int N,
                         int K) {
   cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, M, N, K, 1.0f, A, K, B,
@@ -122,12 +122,8 @@ void metalMatrixMultiply(const float *A, const float *B, float *C, int M, int N,
   }
 }
 
-// Adaptive matrix multiplication with dynamic selection and warmup
 void adaptiveMatrixMultiply(const float *A, const float *B, float *C, int M,
                             int N, int K, bool &usedMetal) {
-  // Determine the multiplication approach based on matrix dimensions and past
-  // performance Initial threshold based on empirical data (adjusted based on
-  // your results)
   const int METAL_THRESHOLD = 10000;
 
   // If matrix is very large, use Metal
@@ -140,14 +136,11 @@ void adaptiveMatrixMultiply(const float *A, const float *B, float *C, int M,
   }
 }
 
-// Default constructor
 Matrix::Matrix() : m_rows(0), m_cols(0), m_data() {}
 
-// Create a zero-initialized matrix
 Matrix::Matrix(size_t rows, size_t cols)
     : m_rows(rows), m_cols(cols), m_data(rows * cols, 0.0f) {}
 
-// Create from vector
 Matrix::Matrix(size_t rows, size_t cols, const std::vector<float> &data)
     : m_rows(rows), m_cols(cols) {
   if (data.size() != rows * cols) {
@@ -156,15 +149,12 @@ Matrix::Matrix(size_t rows, size_t cols, const std::vector<float> &data)
   m_data = data;
 }
 
-// Create from raw array
 Matrix::Matrix(size_t rows, size_t cols, float *data)
     : m_rows(rows), m_cols(cols), m_data(data, data + rows * cols) {}
 
-// Copy constructor
 Matrix::Matrix(const Matrix &other)
     : m_rows(other.m_rows), m_cols(other.m_cols), m_data(other.m_data) {}
 
-// Move constructor
 Matrix::Matrix(Matrix &&other) noexcept
     : m_rows(other.m_rows), m_cols(other.m_cols),
       m_data(std::move(other.m_data)) {
@@ -172,10 +162,8 @@ Matrix::Matrix(Matrix &&other) noexcept
   other.m_cols = 0;
 }
 
-// Destructor
 Matrix::~Matrix() {}
 
-// Copy assignment
 Matrix &Matrix::operator=(const Matrix &other) {
   if (this != &other) {
     m_rows = other.m_rows;
@@ -185,7 +173,6 @@ Matrix &Matrix::operator=(const Matrix &other) {
   return *this;
 }
 
-// Move assignment
 Matrix &Matrix::operator=(Matrix &&other) noexcept {
   if (this != &other) {
     m_rows = other.m_rows;
@@ -197,12 +184,10 @@ Matrix &Matrix::operator=(Matrix &&other) noexcept {
   return *this;
 }
 
-// General multiplication - defaults to adaptive
 Matrix Matrix::multiply(const Matrix &other) const {
   return multiplyAdaptive(other);
 }
 
-// BLAS variant
 Matrix Matrix::multiplyBLAS(const Matrix &other) const {
   if (m_cols != other.m_rows) {
     throw std::invalid_argument(
@@ -215,19 +200,100 @@ Matrix Matrix::multiplyBLAS(const Matrix &other) const {
   return result;
 }
 
-// Metal variant
-Matrix Matrix::multiplyMetal(const Matrix &other) const {
-  if (m_cols != other.m_rows) {
+Matrix Matrix::multiplyMetal(const Matrix &A, const Matrix &B) const {
+  if (A.cols() != B.rows()) {
     throw std::invalid_argument(
         "Matrix dimensions mismatch for multiplication");
   }
 
-  // Initialize Metal device if needed
-  initializeMetal();
+  // Initialize Metal once if needed
+  if (metalDevice == nil) {
+    initializeMetal();
+    if (metalDevice == nil) {
+      throw std::runtime_error("Metal is not supported on this device!");
+    }
+  }
 
-  Matrix result(m_rows, other.m_cols);
-  metalMatrixMultiply(m_data.data(), other.m_data.data(), result.m_data.data(),
-                      m_rows, other.m_cols, m_cols);
+  Matrix result(A.rows(), B.cols());
+
+  @autoreleasepool {
+    // Create buffers for the input and output matrices
+    MTLResourceOptions options =
+        MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache;
+
+    id<MTLBuffer> bufferA =
+        [metalDevice newBufferWithBytes:A.data()
+                                 length:A.size() * sizeof(float)
+                                options:options];
+    id<MTLBuffer> bufferB =
+        [metalDevice newBufferWithBytes:B.data()
+                                 length:B.size() * sizeof(float)
+                                options:options];
+    id<MTLBuffer> bufferC =
+        [metalDevice newBufferWithLength:result.size() * sizeof(float)
+                                 options:options];
+
+    // Create buffers for the matrix dimensions
+    uint M = static_cast<uint>(A.rows());
+    uint N = static_cast<uint>(B.cols());
+    uint K = static_cast<uint>(A.cols());
+
+    id<MTLBuffer> bufferM =
+        [metalDevice newBufferWithBytes:&M length:sizeof(uint) options:options];
+    id<MTLBuffer> bufferN =
+        [metalDevice newBufferWithBytes:&N length:sizeof(uint) options:options];
+    id<MTLBuffer> bufferK =
+        [metalDevice newBufferWithBytes:&K length:sizeof(uint) options:options];
+
+    // Load the Metal kernel function
+    id<MTLFunction> kernelFunction =
+        [metalLibrary newFunctionWithName:@"matrix_mul"];
+    if (!kernelFunction) {
+      throw std::runtime_error("Failed to load Metal function 'matrix_mul'");
+    }
+
+    // Create a compute pipeline state
+    NSError *error = nil;
+    id<MTLComputePipelineState> pipelineState =
+        [metalDevice newComputePipelineStateWithFunction:kernelFunction
+                                                   error:&error];
+    if (!pipelineState) {
+      throw std::runtime_error(
+          "Failed to create Metal pipeline state: " +
+          std::string([[error localizedDescription] UTF8String]));
+    }
+
+    // Create a command buffer and encoder
+    id<MTLCommandBuffer> commandBuffer = [metalCommandQueue commandBuffer];
+    id<MTLComputeCommandEncoder> computeEncoder =
+        [commandBuffer computeCommandEncoder];
+
+    // Set the pipeline state and buffers
+    [computeEncoder setComputePipelineState:pipelineState];
+    [computeEncoder setBuffer:bufferA offset:0 atIndex:0];
+    [computeEncoder setBuffer:bufferB offset:0 atIndex:1];
+    [computeEncoder setBuffer:bufferC offset:0 atIndex:2];
+    [computeEncoder setBuffer:bufferM offset:0 atIndex:3];
+    [computeEncoder setBuffer:bufferN offset:0 atIndex:4];
+    [computeEncoder setBuffer:bufferK offset:0 atIndex:5];
+
+    // Dispatch the kernel
+    NSUInteger threadGroupSize = pipelineState.maxTotalThreadsPerThreadgroup;
+    MTLSize threadgroups = MTLSizeMake((M + 15) / 16, (N + 15) / 16, 1);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(16, 16, 1);
+
+    [computeEncoder dispatchThreadgroups:threadgroups
+                   threadsPerThreadgroup:threadsPerThreadgroup];
+
+    // End encoding and commit the command buffer
+    [computeEncoder endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+
+    // Copy the result back to host memory
+    memcpy(result.data(), [bufferC contents], result.size() * sizeof(float));
+  }
+
   return result;
 }
 
@@ -247,13 +313,101 @@ Matrix Matrix::multiplyAdaptive(const Matrix &other) const {
 }
 
 // Transpose
-Matrix Matrix::transpose() const {
-  Matrix result(m_cols, m_rows);
-  for (size_t i = 0; i < m_rows; ++i) {
-    for (size_t j = 0; j < m_cols; ++j) {
-      result.at(j, i) = at(i, j);
+// Matrix Matrix::transpose() const {
+//   Matrix result(m_cols, m_rows);
+//   for (size_t i = 0; i < m_rows; ++i) {
+//     for (size_t j = 0; j < m_cols; ++j) {
+//       result.at(j, i) = at(i, j);
+//     }
+//   }
+//   return result;
+// }
+
+Matrix Matrix::transposeMetal() const {
+  // Initialize Metal once if needed
+  if (metalDevice == nil) {
+    initializeMetal();
+    if (metalDevice == nil) {
+      throw std::runtime_error("Metal is not supported on this device!");
     }
   }
+
+  // Create the result matrix (transposed dimensions)
+  Matrix result(m_cols, m_rows);
+
+  @autoreleasepool {
+    // Create buffers for the input and output matrices
+    MTLResourceOptions options =
+        MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache;
+
+    id<MTLBuffer> bufferInput =
+        [metalDevice newBufferWithBytes:m_data.data()
+                                 length:m_data.size() * sizeof(float)
+                                options:options];
+    id<MTLBuffer> bufferOutput =
+        [metalDevice newBufferWithLength:result.size() * sizeof(float)
+                                 options:options];
+
+    // Create buffers for the matrix dimensions
+    uint rows = static_cast<uint>(m_rows);
+    uint cols = static_cast<uint>(m_cols);
+
+    id<MTLBuffer> bufferRows = [metalDevice newBufferWithBytes:&rows
+                                                        length:sizeof(uint)
+                                                       options:options];
+    id<MTLBuffer> bufferCols = [metalDevice newBufferWithBytes:&cols
+                                                        length:sizeof(uint)
+                                                       options:options];
+
+    // Load the Metal kernel function
+    id<MTLFunction> kernelFunction =
+        [metalLibrary newFunctionWithName:@"matrix_transpose"];
+    if (!kernelFunction) {
+      throw std::runtime_error(
+          "Failed to load Metal function 'matrix_transpose'");
+    }
+
+    // Create a compute pipeline state
+    NSError *error = nil;
+    id<MTLComputePipelineState> pipelineState =
+        [metalDevice newComputePipelineStateWithFunction:kernelFunction
+                                                   error:&error];
+    if (!pipelineState) {
+      throw std::runtime_error(
+          "Failed to create Metal pipeline state: " +
+          std::string([[error localizedDescription] UTF8String]));
+    }
+
+    // Create a command buffer and encoder
+    id<MTLCommandBuffer> commandBuffer = [metalCommandQueue commandBuffer];
+    id<MTLComputeCommandEncoder> computeEncoder =
+        [commandBuffer computeCommandEncoder];
+
+    // Set the pipeline state and buffers
+    [computeEncoder setComputePipelineState:pipelineState];
+    [computeEncoder setBuffer:bufferInput offset:0 atIndex:0];
+    [computeEncoder setBuffer:bufferOutput offset:0 atIndex:1];
+    [computeEncoder setBuffer:bufferRows offset:0 atIndex:2];
+    [computeEncoder setBuffer:bufferCols offset:0 atIndex:3];
+
+    // Dispatch the kernel
+    NSUInteger threadGroupSize = pipelineState.maxTotalThreadsPerThreadgroup;
+    MTLSize threadgroups = MTLSizeMake((cols + 15) / 16, (rows + 15) / 16, 1);
+    MTLSize threadsPerThreadgroup = MTLSizeMake(16, 16, 1);
+
+    [computeEncoder dispatchThreadgroups:threadgroups
+                   threadsPerThreadgroup:threadsPerThreadgroup];
+
+    // End encoding and commit the command buffer
+    [computeEncoder endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+
+    // Copy the result back to host memory
+    memcpy(result.data(), [bufferOutput contents],
+           result.size() * sizeof(float));
+  }
+
   return result;
 }
 
@@ -402,13 +556,24 @@ std::string Matrix::toString() const {
   return ss.str();
 }
 
-// In Matrix.mm
+Matrix Matrix::matrixAddAccelerate(const Matrix &A, const Matrix &B) const {
+  if (A.rows() != B.rows() || A.cols() != B.cols()) {
+    throw std::invalid_argument("Matrix dimensions mismatch for addition");
+  }
+
+  Matrix result(A.rows(), A.cols());
+
+  vDSP_vadd(A.data(), 1, B.data(), 1, result.data(), 1,
+            static_cast<vDSP_Length>(A.size()));
+
+  return result;
+}
+
 Matrix Matrix::matrixAddMetal(const Matrix &A, const Matrix &B) const {
   if (A.rows() != B.rows() || A.cols() != B.cols()) {
     throw std::invalid_argument("Matrix dimensions mismatch for addition");
   }
 
-  // Initialize Metal once if needed
   if (metalDevice == nil) {
     initializeMetal();
     if (metalDevice == nil) {
@@ -417,32 +582,31 @@ Matrix Matrix::matrixAddMetal(const Matrix &A, const Matrix &B) const {
   }
 
   Matrix result(A.rows(), A.cols());
+  uint size = static_cast<uint>(A.size());
 
   @autoreleasepool {
-    // Create buffers with optimal alignment and usage
     MTLResourceOptions options =
         MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache;
 
-    id<MTLBuffer> bufferA =
-        [metalDevice newBufferWithBytes:A.data()
-                                 length:A.size() * sizeof(float)
-                                options:options];
-    id<MTLBuffer> bufferB =
-        [metalDevice newBufferWithBytes:B.data()
-                                 length:B.size() * sizeof(float)
-                                options:options];
+    id<MTLBuffer> bufferA = [metalDevice newBufferWithBytes:A.data()
+                                                     length:size * sizeof(float)
+                                                    options:options];
+    id<MTLBuffer> bufferB = [metalDevice newBufferWithBytes:B.data()
+                                                     length:size * sizeof(float)
+                                                    options:options];
     id<MTLBuffer> bufferC =
-        [metalDevice newBufferWithLength:A.size() * sizeof(float)
-                                 options:options];
+        [metalDevice newBufferWithLength:size * sizeof(float) options:options];
 
-    // Load the Metal function
+    id<MTLBuffer> sizeBuffer = [metalDevice newBufferWithBytes:&size
+                                                        length:sizeof(uint)
+                                                       options:options];
+
     id<MTLFunction> addFunction =
         [metalLibrary newFunctionWithName:@"add_arrays"];
     if (!addFunction) {
       throw std::runtime_error("Failed to load Metal function 'add_arrays'");
     }
 
-    // Create a Metal compute pipeline for addition
     NSError *error = nil;
     id<MTLComputePipelineState> pipelineState =
         [metalDevice newComputePipelineStateWithFunction:addFunction
@@ -453,47 +617,36 @@ Matrix Matrix::matrixAddMetal(const Matrix &A, const Matrix &B) const {
           std::string([[error localizedDescription] UTF8String]));
     }
 
-    // Create a command buffer and encoder
     id<MTLCommandBuffer> commandBuffer = [metalCommandQueue commandBuffer];
     id<MTLComputeCommandEncoder> computeEncoder =
         [commandBuffer computeCommandEncoder];
 
-    // Set the pipeline state and buffers
     [computeEncoder setComputePipelineState:pipelineState];
     [computeEncoder setBuffer:bufferA offset:0 atIndex:0];
     [computeEncoder setBuffer:bufferB offset:0 atIndex:1];
     [computeEncoder setBuffer:bufferC offset:0 atIndex:2];
+    [computeEncoder setBuffer:sizeBuffer offset:0 atIndex:3];
 
-    // Dispatch the compute kernel
-    NSUInteger threadGroupSize = pipelineState.maxTotalThreadsPerThreadgroup;
-    if (threadGroupSize > A.size()) {
-      threadGroupSize = A.size();
-    }
-    MTLSize threadgroups =
-        MTLSizeMake((A.size() + threadGroupSize - 1) / threadGroupSize, 1, 1);
+    NSUInteger maxThreadsPerGroup = pipelineState.maxTotalThreadsPerThreadgroup;
+    NSUInteger threadGroupSize = MIN(256, maxThreadsPerGroup);
+
+    NSUInteger totalThreads = (size + 3) / 4;
+    NSUInteger numThreadGroups =
+        (totalThreads + threadGroupSize - 1) / threadGroupSize;
+
+    MTLSize threadgroups = MTLSizeMake(numThreadGroups, 1, 1);
     MTLSize threadsPerThreadgroup = MTLSizeMake(threadGroupSize, 1, 1);
+
     [computeEncoder dispatchThreadgroups:threadgroups
                    threadsPerThreadgroup:threadsPerThreadgroup];
 
-    // End encoding and commit the command buffer
     [computeEncoder endEncoding];
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
 
-    // Copy result back to host memory
-    memcpy(result.data(), bufferC.contents, A.size() * sizeof(float));
+    memcpy(result.data(), [bufferC contents], size * sizeof(float));
   }
 
-  return result;
-}
-
-Matrix Matrix::matrixAddAccelerate(const Matrix &A, const Matrix &B) const {
-  if (A.rows() != B.rows() || A.cols() != B.cols()) {
-    throw std::invalid_argument("Matrix dimensions mismatch for addition");
-  }
-
-  Matrix result(A.rows(), A.cols());
-  vDSP_vadd(A.data(), 1, B.data(), 1, result.data(), 1, A.size());
   return result;
 }
 
@@ -503,12 +656,31 @@ Matrix Matrix::adaptiveMatrixAdd(const Matrix &A, const Matrix &B,
     throw std::invalid_argument("Matrix dimensions mismatch for addition");
   }
 
-  // Threshold for switching to Metal (adjust based on your system)
-  const size_t METAL_THRESHOLD = 10000;
+  static size_t METAL_THRESHOLD = 10000;
+  static bool metalInitialized = false;
+  static bool metalSupported = true;
 
-  if (A.size() >= METAL_THRESHOLD) {
-    usedMetal = true;
-    return matrixAddMetal(A, B);
+  if (!metalInitialized) {
+    if (metalDevice == nil) {
+      try {
+        initializeMetal();
+        metalSupported = (metalDevice != nil);
+      } catch (...) {
+        metalSupported = false;
+      }
+    }
+    metalInitialized = true;
+  }
+
+  if (metalSupported && A.size() >= METAL_THRESHOLD) {
+    try {
+      usedMetal = true;
+      return matrixAddMetal(A, B);
+    } catch (const std::exception &e) {
+      METAL_THRESHOLD *= 2;
+      usedMetal = false;
+      return matrixAddAccelerate(A, B);
+    }
   } else {
     usedMetal = false;
     return matrixAddAccelerate(A, B);

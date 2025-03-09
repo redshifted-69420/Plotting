@@ -29,7 +29,7 @@ class Matrix {
 
 
   // Basic operations
-  Matrix transpose() const;
+  Matrix transpose() const { return transposeMetal(); };
   static Matrix random(size_t rows, size_t cols, float min = -10.0f, float max = 10.0f);
 
   // Accessors
@@ -59,11 +59,12 @@ class Matrix {
   private:
   Matrix multiplyAdaptive(const Matrix &other) const; // Adaptive variant
   Matrix multiplyBLAS(const Matrix &other) const; // BLAS variant
-  Matrix multiplyMetal(const Matrix &other) const; // Metal variant
+  Matrix multiplyMetal(const Matrix &A, const Matrix &B) const;
   Matrix multiply(const Matrix &other) const; // General multiplication
   Matrix matrixAddMetal(const Matrix &A, const Matrix &B) const;
   Matrix matrixAddAccelerate(const Matrix &A, const Matrix &B) const;
   Matrix adaptiveMatrixAdd(const Matrix &A, const Matrix &B, bool &usedMetal) const;
+  Matrix transposeMetal() const;
 };
 
 #endif // MATRIX_H

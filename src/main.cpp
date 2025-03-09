@@ -361,7 +361,7 @@ int main() {
   Matrix D = A + B;
   end = std::chrono::high_resolution_clock::now();
   auto duration_add = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-  std::cout << "Trasnpose Time: " << duration_add.count() << " ms" << std::endl;
+  std::cout << "Add Duration: " << duration_add.count() << " ms" << std::endl;
   std::cout << D.toString();
 
   return 0;
