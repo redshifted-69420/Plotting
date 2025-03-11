@@ -278,88 +278,47 @@ int main() {
     return 1;
   }
 
-  Matrix M1(3, 3, {1, 2, 8, 4, 5, 9, 7, 8, 9});
-  Matrix M2(3, 3, {6, 2, 3, 4, 5, 6, 7, 8, 9});
-  Matrix M3 = M1 + M2;
-  Matrix M4 = M1 - M2;
-  Matrix M5 = M1 * M2;
-  M3.print();
-  M4.print();
-  M5.print();
-
-  Matrix M = {{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {7.0f, 8.0f, 9.0f}};
-  Matrix M_ = M * M;
-  M_.print();
-  std::cout << "The deteraminant is: " << M_.det() << '\n';
-
-  // Example 2: Tensor Addition
-  {
-    std::cout << "\n===== Example 2: Tensor Addition =====" << std::endl;
-
-    // Create two tensors
-    Tensor T1({2, 2}, {1, 2, 3, 4});
-    Tensor T2({2, 2}, {5, 6, 7, 8});
-
-    // Perform tensor addition
-    Tensor T3 = T1.add(T2);
-
-    // Print the tensors
-    std::cout << "Tensor T1:\n" << T1.toString() << std::endl;
-    std::cout << "Tensor T2:\n" << T2.toString() << std::endl;
-    std::cout << "Tensor T3 (T1 + T2):\n" << T3.toString() << std::endl;
+  try {
+    Matrix M = Matrix::random(4096, 4096);
+    M.print();
+    auto start = std::chrono::high_resolution_clock::now();
+    Matrix M_ = M * M;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time to multiply matrix: " << duration.count() << " ms\n";
+    M_.print();
+  } catch (...) {
+    std::cerr << "Unknown error occurred" << std::endl;
+    return 1;
   }
 
-  // Example 3: Tensor Scaling
-  {
-    std::cout << "\n===== Example 3: Tensor Scaling =====" << std::endl;
-
-    // Create a tensor
-    Tensor T({2, 2}, {1, 2, 3, 4});
-
-    // Scale the tensor by a scalar
-    float scalar = 2.5f;
-    Tensor T_scaled = T.scale(scalar);
-
-    // Print the tensors
-    std::cout << "Tensor T:\n" << T.toString() << std::endl;
-    std::cout << "Tensor T_scaled (T * " << scalar << "):\n" << T_scaled.toString() << std::endl;
+  try {
+    Matrix M1 = Matrix::random(4096, 4096);
+    Matrix M2 = Matrix::random(4096, 4096);
+    auto start = std::chrono::high_resolution_clock::now();
+    Matrix M_ = M1 + M2;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time to add matrix: " << duration.count() << " ms\n";
+    M_.print();
+  } catch (...) {
+    std::cerr << "Unknown error occurred" << std::endl;
+    return 1;
   }
 
-
-  // Example 5: Tensor Dot Product (Placeholder)
-  {
-    std::cout << "\n===== Example 5: Tensor Dot Product =====" << std::endl;
-
-    // Create two tensors
-    Tensor T1({2, 3}, {1, 2, 3, 4, 5, 6});
-    Tensor T2({3, 2}, {7, 8, 9, 10, 11, 12});
-
-    // Perform dot product (placeholder)
-    try {
-      Tensor T3 = T1.dot(T2);
-      std::cout << "Tensor T1:\n" << T1.toString() << std::endl;
-      std::cout << "Tensor T2:\n" << T2.toString() << std::endl;
-      std::cout << "Tensor T3 (T1 . T2):\n" << T3.toString() << std::endl;
-    } catch (const std::runtime_error &e) {
-      std::cerr << "Error: " << e.what() << std::endl;
-    }
+  try {
+    Matrix M1 = Matrix::random(4096, 4096);
+    Matrix M2 = Matrix::random(4096, 4096);
+    auto start = std::chrono::high_resolution_clock::now();
+    Matrix M_ = M1 - M2;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time to sub matrix: " << duration.count() << " ms\n";
+    M_.print();
+  } catch (...) {
+    std::cerr << "Unknown error occurred" << std::endl;
+    return 1;
   }
-
-  // Example 6: Tensor Transpose
-  {
-    std::cout << "\n===== Example 6: Tensor Transpose =====" << std::endl;
-
-    // Create a tensor
-    Tensor T({2, 3}, {1, 2, 3, 4, 5, 6});
-
-    // Transpose the tensor
-    Tensor T_transposed = T.transpose({1, 0});
-
-    // Print the tensors
-    std::cout << "Tensor T:\n" << T.toString() << std::endl;
-    std::cout << "Tensor T_transposed:\n" << T_transposed.toString() << std::endl;
-  }
-
 
   return 0;
 }

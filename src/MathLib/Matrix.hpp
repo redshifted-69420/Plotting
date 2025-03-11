@@ -17,28 +17,6 @@ class Matrix {
   Matrix(Matrix &&other) noexcept; // Move constructor
   ~Matrix(); // Destructor
 
-  // Assignment operators
-  Matrix &operator=(const Matrix &other);
-  Matrix &operator=(Matrix &&other) noexcept;
-
-  // Matrix operations
-  [[nodiscard]] Matrix operator*(const Matrix &other) const { return multiply(other); };
-  Matrix operator+(const Matrix &other) const {
-    bool usedMetal = false;
-    return adaptiveMatrixAdd(*this, other, usedMetal);
-  }
-  Matrix operator-(const Matrix &other) const {
-    bool usedMetal = false;
-    return adaptiveMatrixSub(*this, other, usedMetal);
-  }
-
-  // [{Matrix Methods}]
-  [[nodiscard]] float det() const;
-
-  // Basic operations
-  Matrix transpose() const { return optimisedTrasnpose(); };
-  static Matrix random(size_t rows, size_t cols, float min = -10.0f, float max = 10.0f);
-
   // Accessors
   float &at(size_t row, size_t col);
   const float &at(size_t row, size_t col) const;
@@ -47,6 +25,20 @@ class Matrix {
   size_t rows() const;
   size_t cols() const;
   size_t size() const;
+
+  // Assignment operators
+  Matrix &operator=(const Matrix &other);
+  Matrix &operator=(Matrix &&other) noexcept;
+
+  // Matrix operations
+  [[nodiscard]] Matrix operator*(const Matrix &other) const { return multiply(other); };
+  Matrix operator+(const Matrix &other) const;
+  Matrix operator-(const Matrix &other) const;
+  Matrix T() const { return transpose(); }
+  [[nodiscard]] float det() const;
+
+  // Basic operations
+  static Matrix random(size_t rows, size_t cols, float min = -10.0f, float max = 10.0f);
 
   // Comparison
   bool operator==(const Matrix &other) const;
@@ -65,24 +57,15 @@ class Matrix {
   std::vector<float> m_data;
 
   private:
-  Matrix multiplyAdaptive(const Matrix &other) const; // Adaptive variant
-  Matrix multiplyBLAS(const Matrix &other) const; // BLAS variant
-  Matrix multiplyMetal(const Matrix &A, const Matrix &B) const; // Metal variant
-  Matrix multiply(const Matrix &other) const; // General multiplication
-  //// add method
-  Matrix matrixAddMetal(const Matrix &A, const Matrix &B) const; ////
-  Matrix matrixAddAccelerate(const Matrix &A, const Matrix &B) const; ////
-  Matrix adaptiveMatrixAdd(const Matrix &A, const Matrix &B, bool &usedMetal) const; ////
-
-  /// sun method
-  Matrix matrixSubMetal(const Matrix &A, const Matrix &B) const;
-  Matrix matrixSubAccelerate(const Matrix &A, const Matrix &B) const; ////
-  Matrix adaptiveMatrixSub(const Matrix &A, const Matrix &B, bool &usedMetal) const; ////
-
-  /// [other method]
-  Matrix transposeMetal() const;
-  Matrix optimisedTrasnpose() const;
-  Matrix transposeNAIVE() const;
+  Matrix multiply(const Matrix &other) const;
+  Matrix multiplyStandard(const Matrix &other) const;
+  Matrix ParallelMatrixSub(const Matrix &A, const Matrix &B) const;
+  Matrix transpose() const;
+  Matrix classicalMultiply(const Matrix &B) const;
+  Matrix strassenMultiply(const Matrix &B) const;
+  Matrix padMatrix(size_t newSize) const;
+  Matrix coppersmithWinograd(const Matrix &A, const Matrix &B);
+  Matrix subMatrix(size_t startRow, size_t startCol, size_t numRows, size_t numCols) const;
 };
 
 #endif // MATRIX_H
